@@ -1,7 +1,7 @@
 # 🧭 Forvara Core
 
 [![TypeScript](https://img.shields.io/badge/Language-TypeScript-blue.svg)](https://www.typescriptlang.org/)
-[![License](https://img.shields.io/badge/license-ForvaraSoft-informational)](https://forvara.com)
+[![License](https://img.shields.io/badge/license-Forvara-informational)](https://forvara.dev)
 [![Supabase](https://img.shields.io/badge/backend-Supabase-green)](https://supabase.com)
 
 **Forvara Core** is the central identity and subscription management hub for all Forvara-connected apps, such as [Elaris ERP](https://elariis.com). It handles:
