@@ -1,7 +1,4 @@
-// Forvara Core Server - Express.js + TypeScript
-// Sistema multitenant para gestión de usuarios, empresas y suscripciones
-
-import express, { Request, Response, NextFunction } from 'express';
+import express, { Request, Response, NextFunction, RequestHandler } from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import morgan from 'morgan';
@@ -10,19 +7,25 @@ import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import jwt from 'jsonwebtoken';
 import Stripe from 'stripe';
 import { z } from 'zod';
+import dotenv from 'dotenv';
+
+// Cargar variables de entorno
+dotenv.config();
 
 // =============================================================================
-// CONFIGURACIÓN Y TIPOS
+// CONFIGURACIÓN Y TIPOS 
 // =============================================================================
 
 interface Config {
   PORT: number;
   SUPABASE_URL: string;
   SUPABASE_SERVICE_KEY: string;
+  SUPABASE_ANON_KEY: string;
   JWT_SECRET: string;
   STRIPE_SECRET_KEY?: string;
   STRIPE_WEBHOOK_SECRET?: string;
   NODE_ENV: 'development' | 'production' | 'test';
+  FRONTEND_URLS: string[];
 }
 
 interface AuthenticatedRequest extends Request {
@@ -30,6 +33,7 @@ interface AuthenticatedRequest extends Request {
     id: string;
     email?: string;
     tenant_id?: string;
+    rol?: string;
   };
   subscription?: SubscriptionStatus;
 }
@@ -45,22 +49,57 @@ interface SubscriptionStatus {
     enabled_modules: string[];
     rate_limits: Record<string, any>;
   };
+  user_role?: string;
+  tenant_info?: {
+    id: string;
+    role: string;
+  };
+  offline_token?: string;
 }
 
-interface CreateTenantRequest {
-  nombre: string;
-  ruc: string;
-  direccion?: string;
-  telefono?: string;
-  email?: string;
-}
-
-interface CreateUserRequest {
+interface ForvaraUser {
+  id: string;
   nombre: string;
   apellido: string;
   telefono: string;
   email?: string;
+  avatar_url?: string;
+  tenants: Array<{
+    id: string;
+    nombre: string;
+    ruc: string;
+    rol: string;
+    activo: boolean;
+  }>;
 }
+
+// =============================================================================
+// VALIDACIÓN CON ZOD
+// =============================================================================
+
+const loginSchema = z.object({
+  email: z.string().email('Email inválido').optional(),
+  telefono: z.string().min(8, 'Teléfono inválido').optional(),
+  password: z.string().min(6, 'Contraseña debe tener al menos 6 caracteres')
+}).refine(data => data.email || data.telefono, {
+  message: 'Debe proporcionar email o teléfono'
+});
+
+const registerSchema = z.object({
+  nombre: z.string().min(2, 'Nombre debe tener al menos 2 caracteres').max(100),
+  apellido: z.string().min(2, 'Apellido debe tener al menos 2 caracteres').max(100),
+  telefono: z.string().min(8, 'Teléfono inválido').max(20),
+  email: z.string().email('Email inválido').optional(),
+  password: z.string().min(6, 'Contraseña debe tener al menos 6 caracteres')
+});
+
+const createTenantSchema = z.object({
+  nombre: z.string().min(2, 'Nombre de empresa requerido').max(255),
+  ruc: z.string().min(10, 'RUC inválido').max(20),
+  direccion: z.string().optional(),
+  telefono: z.string().optional(),
+  email: z.string().email('Email inválido').optional()
+});
 
 // =============================================================================
 // CONFIGURACIÓN
@@ -70,15 +109,24 @@ const config: Config = {
   PORT: parseInt(process.env.PORT || '3000'),
   SUPABASE_URL: process.env.SUPABASE_URL || '',
   SUPABASE_SERVICE_KEY: process.env.SUPABASE_SERVICE_KEY || '',
+  SUPABASE_ANON_KEY: process.env.SUPABASE_ANON_KEY || '',
   JWT_SECRET: process.env.JWT_SECRET || 'your-secret-key',
   STRIPE_SECRET_KEY: process.env.STRIPE_SECRET_KEY,
   STRIPE_WEBHOOK_SECRET: process.env.STRIPE_WEBHOOK_SECRET,
-  NODE_ENV: (process.env.NODE_ENV as any) || 'development'
+  NODE_ENV: (process.env.NODE_ENV as any) || 'development',
+  FRONTEND_URLS: process.env.FRONTEND_URLS?.split(',') || [
+    'http://localhost:3000',
+    'https://elaris.app',
+    'https://cuenta.forvara.com'
+  ]
 };
 
-// Validar configuración requerida
-if (!config.SUPABASE_URL || !config.SUPABASE_SERVICE_KEY) {
-  throw new Error('SUPABASE_URL and SUPABASE_SERVICE_KEY are required');
+// Validar configuración crítica
+const requiredEnvVars = ['SUPABASE_URL', 'SUPABASE_SERVICE_KEY', 'JWT_SECRET'];
+for (const envVar of requiredEnvVars) {
+  if (!process.env[envVar]) {
+    throw new Error(`Variable de entorno requerida: ${envVar}`);
+  }
 }
 
 // =============================================================================
@@ -96,154 +144,159 @@ if (config.STRIPE_SECRET_KEY) {
 }
 
 // =============================================================================
-// MIDDLEWARE
+// MIDDLEWARE BÁSICO
 // =============================================================================
 
-// Middleware básico
-app.use(helmet());
+app.use(helmet({ crossOriginEmbedderPolicy: false }));
+
 app.use(cors({
-  origin: config.NODE_ENV === 'production' 
-    ? ['https://forvara.com', 'https://elaris.app']
-    : true,
-  credentials: true
+  origin: config.NODE_ENV === 'production' ? config.FRONTEND_URLS : true,
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Tenant-ID', 'X-App-ID']
 }));
 
-// Rate limiting
-const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutos
-  max: 100, // límite de 100 requests por IP
-  message: 'Too many requests from this IP'
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  message: { error: 'Demasiados intentos de login. Intenta en 15 minutos.' },
+  standardHeaders: true,
+  legacyHeaders: false,
 });
-app.use('/api/', limiter);
 
-// Logging
+const generalLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 100,
+  message: { error: 'Demasiadas peticiones. Intenta más tarde.' }
+});
+
+//app.use('/api/auth', authLimiter);
+//app.use('/api/', generalLimiter);
 app.use(morgan(config.NODE_ENV === 'production' ? 'combined' : 'dev'));
-
-// Body parsing
-app.use('/webhook', express.raw({ type: 'application/json' })); // Para Stripe webhooks
+app.use('/webhook', express.raw({ type: 'application/json' }));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 
 // =============================================================================
-// MIDDLEWARE DE AUTENTICACIÓN
+// MIDDLEWARE DE AUTENTICACIÓN CORREGIDO
 // =============================================================================
 
-async function authenticateToken(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+const authenticateToken: RequestHandler = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
     const authHeader = req.headers['authorization'];
     const token = authHeader && authHeader.split(' ')[1];
 
     if (!token) {
-      return res.status(401).json({ error: 'Access token required' });
+      res.status(401).json({ 
+        error: 'Access token required',
+        code: 'MISSING_TOKEN'
+      });
+      return;
     }
 
-    // Verificar token con Supabase
-    const { data, error } = await supabase.auth.getUser(token);
-    
-    if (error || !data.user) {
-      return res.status(401).json({ error: 'Invalid token' });
+    let decoded: any;
+    try {
+      decoded = jwt.verify(token, config.JWT_SECRET);
+    } catch (jwtError) {
+      const { data, error } = await supabase.auth.getUser(token);
+      
+      if (error || !data.user) {
+        res.status(401).json({ 
+          error: 'Invalid token',
+          code: 'INVALID_TOKEN'
+        });
+        return;
+      }
+
+      req.user = {
+        id: data.user.id,
+        email: data.user.email
+      };
+      next();
+      return;
     }
 
     req.user = {
-      id: data.user.id,
-      email: data.user.email
+      id: decoded.user_id,
+      email: decoded.email,
+      tenant_id: decoded.tenant_id,
+      rol: decoded.rol
     };
 
     next();
   } catch (error) {
     console.error('Auth error:', error);
-    res.status(401).json({ error: 'Authentication failed' });
+    res.status(401).json({ 
+      error: 'Authentication failed',
+      code: 'AUTH_ERROR'
+    });
   }
-}
+};
 
 // =============================================================================
-// MIDDLEWARE DE SUSCRIPCIÓN
+// MIDDLEWARE DE VALIDACIÓN CORREGIDO
 // =============================================================================
 
-function requireActiveSubscription(app_id: string = 'elaris') {
-  return async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+function validateBody(schema: z.ZodSchema): RequestHandler {
+  return (req: Request, res: Response, next: NextFunction): void => {
     try {
-      const tenantId = req.headers['x-tenant-id'] as string;
-      
-      if (!tenantId) {
-        return res.status(400).json({ error: 'X-Tenant-ID header required' });
-      }
-
-      // Verificar que el usuario pertenece al tenant
-      const { data: userTenant, error: userTenantError } = await supabase
-        .from('user_tenants')
-        .select('*')
-        .eq('usuario_id', req.user!.id)
-        .eq('tenant_id', tenantId)
-        .eq('activo', true)
-        .single();
-
-      if (userTenantError || !userTenant) {
-        return res.status(403).json({ error: 'Access denied to this tenant' });
-      }
-
-      // Verificar suscripción
-      const { data: subscription, error: subError } = await supabase
-        .rpc('check_subscription_status', {
-          p_tenant_id: tenantId,
-          p_app_id: app_id
-        });
-
-      if (subError) {
-        throw subError;
-      }
-
-      if (!subscription || !subscription.active) {
-        return res.status(402).json({
-          error: 'Active subscription required',
-          subscription
-        });
-      }
-
-      req.subscription = subscription;
-      req.user!.tenant_id = tenantId;
-      next();
-    } catch (error) {
-      console.error('Subscription middleware error:', error);
-      res.status(500).json({ error: 'Subscription verification failed' });
-    }
-  };
-}
-
-// =============================================================================
-// VALIDACIÓN CON ZOD
-// =============================================================================
-
-const createTenantSchema = z.object({
-  nombre: z.string().min(2).max(255),
-  ruc: z.string().min(10).max(20),
-  direccion: z.string().optional(),
-  telefono: z.string().optional(),
-  email: z.string().email().optional()
-});
-
-const createUserSchema = z.object({
-  nombre: z.string().min(2).max(100),
-  apellido: z.string().min(2).max(100),
-  telefono: z.string().min(10).max(20),
-  email: z.string().email().optional()
-});
-
-function validateBody(schema: z.ZodSchema) {
-  return (req: Request, res: Response, next: NextFunction) => {
-    try {
-      schema.parse(req.body);
-      next();
-    } catch (error) {
-      if (error instanceof z.ZodError) {
-        return res.status(400).json({
+      const result = schema.safeParse(req.body);
+      if (!result.success) {
+        res.status(400).json({
           error: 'Validation failed',
-          details: error.errors
+          details: result.error.errors.map(err => ({
+            field: err.path.join('.'),
+            message: err.message
+          }))
         });
+        return;
       }
+      req.body = result.data;
+      next();
+    } catch (error) {
       next(error);
     }
   };
+}
+
+// =============================================================================
+// UTILIDADES
+// =============================================================================
+
+function generateJWT(user: any, tenant?: any): string {
+  const payload = {
+    user_id: user.id,
+    email: user.email,
+    tenant_id: tenant?.id,
+    rol: tenant?.rol,
+    iat: Math.floor(Date.now() / 1000),
+    exp: Math.floor(Date.now() / 1000) + (30 * 24 * 60 * 60)
+  };
+
+  return jwt.sign(payload, config.JWT_SECRET);
+}
+
+async function logActivity(params: {
+  tenant_id?: string;
+  usuario_id?: string;
+  app_id?: string;
+  action: string;
+  details?: Record<string, any>;
+  req: Request;
+}): Promise<void> {
+  try {
+    await supabase.from('activity_logs').insert({
+      tenant_id: params.tenant_id,
+      usuario_id: params.usuario_id,
+      app_id: params.app_id,
+      action: params.action,
+      details: params.details || {},
+      ip_address: params.req.ip,
+      user_agent: params.req.get('User-Agent')
+    });
+  } catch (error) {
+    console.error('Error logging activity:', error);
+  }
 }
 
 // =============================================================================
@@ -254,7 +307,12 @@ app.get('/health', (req: Request, res: Response) => {
   res.json({
     status: 'ok',
     timestamp: new Date().toISOString(),
-    version: '1.0.0'
+    version: '1.1.0',
+    services: {
+      database: 'connected',
+      auth: 'supabase',
+      payments: stripe ? 'stripe' : 'disabled'
+    }
   });
 });
 
@@ -265,55 +323,268 @@ app.get('/api/status', (req: Request, res: Response) => {
     features: {
       auth: true,
       subscriptions: true,
-      payments: !!stripe
+      payments: !!stripe,
+      realtime: true
     }
   });
 });
 
 // =============================================================================
-// RUTAS DE AUTENTICACIÓN
+// HANDLERS DE AUTENTICACIÓN CORREGIDOS
 // =============================================================================
 
-app.post('/api/auth/register', validateBody(createUserSchema), async (req: Request, res: Response) => {
+const loginHandler: RequestHandler = async (req: Request, res: Response): Promise<void> => {
   try {
-    const userData: CreateUserRequest = req.body;
+    const { email, telefono, password } = req.body;
+
+    // Intentar login con Supabase
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email: email || `${telefono}@temp.forvara.com`,
+      password
+    });
+
+    if (error) {
+      await logActivity({
+        action: 'LOGIN_FAILED',
+        details: { email, telefono, error: error.message },
+        req
+      });
+      
+      res.status(401).json({ 
+        error: 'Credenciales inválidas',
+        code: 'INVALID_CREDENTIALS'
+      });
+      return;
+    }
+
+    // Obtener datos del usuario de public.users (SIN INNER JOIN)
+    const { data: userData, error: userError } = await supabase
+      .from('users')
+      .select('*')
+      .eq('id', data.user.id)
+      .single();
+
+    if (userError || !userData) {
+      res.status(404).json({ 
+        error: 'Usuario no encontrado',
+        code: 'USER_NOT_FOUND'
+      });
+      return;
+    }
+
+    // Obtener tenants del usuario (separado)
+    const { data: userTenants, error: tenantsError } = await supabase
+      .from('user_tenants')
+      .select(`
+        tenant_id,
+        rol,
+        activo,
+        tenants(
+          id,
+          nombre,
+          ruc
+        )
+      `)
+      .eq('usuario_id', data.user.id)
+      .eq('activo', true);
+
+    // Log successful login
+    await logActivity({
+      usuario_id: userData.id,
+      action: 'LOGIN_SUCCESS',
+      details: { email, telefono },
+      req
+    });
+
+    res.json({
+      message: 'Login exitoso',
+      user: {
+        id: userData.id,
+        nombre: userData.nombre,
+        apellido: userData.apellido,
+        email: userData.email,
+        telefono: userData.telefono
+      },
+      tenants: userTenants?.map((ut: any) => ({
+        id: ut.tenants?.id,
+        nombre: ut.tenants?.nombre,
+        ruc: ut.tenants?.ruc,
+        rol: ut.rol
+      })) || [],
+      token: data.session?.access_token,
+      session: data.session
+    });
+
+  } catch (error) {
+    console.error('Login error:', error);
+    res.status(500).json({ 
+      error: 'Error interno del servidor',
+      code: 'INTERNAL_ERROR'
+    });
+  }
+};
+
+const registerHandler: RequestHandler = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { nombre, apellido, telefono, email, password } = req.body;
 
     // Crear usuario en Supabase Auth
     const { data, error } = await supabase.auth.admin.createUser({
-      phone: userData.telefono,
-      email: userData.email,
-      user_metadata: {
-        nombre: userData.nombre,
-        apellido: userData.apellido,
-        telefono: userData.telefono
-      },
+      email: email || `${telefono}@temp.forvara.com`,
+      phone: telefono,
+      password,
+      user_metadata: { nombre, apellido, telefono },
       email_confirm: true,
       phone_confirm: true
     });
 
-    if (error) {
-      return res.status(400).json({ error: error.message });
+    if (error || !data.user) {
+      await logActivity({
+        action: 'REGISTER_FAILED',
+        details: { email, telefono, error: error?.message },
+        req
+      });
+
+      res.status(400).json({ 
+        error: error?.message || 'Error creando usuario',
+        code: 'REGISTRATION_FAILED'
+      });
+      return;
     }
 
+    // Insertar usuario en tabla public.users
+    const { error: insertError } = await supabase.from('users').insert({
+      id: data.user.id,
+      nombre,
+      apellido,
+      telefono,
+      email: data.user.email
+    });
+
+    if (insertError) {
+      console.error('Error insertando en public.users:', insertError);
+      res.status(500).json({
+        error: 'Usuario creado en auth pero falló al insertar en tabla users',
+        code: 'PARTIAL_REGISTRATION'
+      });
+      return;
+    }
+
+    await logActivity({
+      usuario_id: data.user.id,
+      action: 'REGISTER_SUCCESS',
+      details: { email, telefono },
+      req
+    });
+
     res.status(201).json({
-      message: 'User created successfully',
+      message: 'Usuario creado exitosamente',
       user: {
         id: data.user.id,
         email: data.user.email,
         phone: data.user.phone
       }
     });
+
   } catch (error) {
     console.error('Registration error:', error);
-    res.status(500).json({ error: 'Registration failed' });
+    res.status(500).json({ 
+      error: 'Error interno del servidor',
+      code: 'INTERNAL_ERROR'
+    });
   }
-});
+};
+
+
+const selectTenantHandler: RequestHandler = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  try {
+    const { tenant_id } = req.body;
+
+    if (!tenant_id) {
+      res.status(400).json({ 
+        error: 'tenant_id requerido',
+        code: 'MISSING_TENANT_ID'
+      });
+      return;
+    }
+
+    const { data: userTenant, error } = await supabase
+      .from('user_tenants')
+      .select(`*, tenants(*)`)
+      .eq('usuario_id', req.user!.id)
+      .eq('tenant_id', tenant_id)
+      .eq('activo', true)
+      .single();
+
+    if (error || !userTenant) {
+      res.status(403).json({ 
+        error: 'Acceso denegado a esta empresa',
+        code: 'ACCESS_DENIED'
+      });
+      return;
+    }
+
+    const token = generateJWT(req.user, {
+      id: userTenant.tenant_id,
+      rol: userTenant.rol
+    });
+
+    await logActivity({
+      tenant_id,
+      usuario_id: req.user!.id,
+      action: 'TENANT_SELECTED',
+      details: { tenant_name: userTenant.tenants.nombre },
+      req
+    });
+
+    res.json({
+      message: 'Empresa seleccionada',
+      token,
+      tenant: {
+        id: userTenant.tenants.id,
+        nombre: userTenant.tenants.nombre,
+        ruc: userTenant.tenants.ruc,
+        rol: userTenant.rol
+      }
+    });
+
+  } catch (error) {
+    console.error('Select tenant error:', error);
+    res.status(500).json({ 
+      error: 'Error interno del servidor',
+      code: 'INTERNAL_ERROR'
+    });
+  }
+};
+
+const logoutHandler: RequestHandler = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  try {
+    if (req.user?.id) {
+      await supabase.auth.admin.signOut(req.user.id);
+      
+      await logActivity({
+        usuario_id: req.user.id,
+        tenant_id: req.user.tenant_id,
+        action: 'LOGOUT',
+        req
+      });
+    }
+
+    res.json({ message: 'Logout exitoso' });
+  } catch (error) {
+    console.error('Logout error:', error);
+    res.status(500).json({ 
+      error: 'Error en logout',
+      code: 'LOGOUT_ERROR'
+    });
+  }
+};
 
 // =============================================================================
-// RUTAS DE USUARIOS
+// HANDLERS DE USUARIOS 
 // =============================================================================
 
-app.get('/api/users/me', authenticateToken, async (req: AuthenticatedRequest, res: Response) => {
+const getUserProfileHandler: RequestHandler = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const { data, error } = await supabase.rpc('get_usuario_actual');
     
@@ -321,14 +592,20 @@ app.get('/api/users/me', authenticateToken, async (req: AuthenticatedRequest, re
       throw error;
     }
 
-    res.json(data);
+    res.json({
+      success: true,
+      data
+    });
   } catch (error) {
     console.error('Get user error:', error);
-    res.status(500).json({ error: 'Failed to get user info' });
+    res.status(500).json({ 
+      error: 'Error al obtener información del usuario',
+      code: 'GET_USER_ERROR'
+    });
   }
-});
+};
 
-app.put('/api/users/me', authenticateToken, async (req: AuthenticatedRequest, res: Response) => {
+const updateUserProfileHandler: RequestHandler = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const { nombre, apellido, telefono, email } = req.body;
     
@@ -349,20 +626,87 @@ app.put('/api/users/me', authenticateToken, async (req: AuthenticatedRequest, re
       throw error;
     }
 
-    res.json({ message: 'Profile updated successfully', user: data });
+    await logActivity({
+      usuario_id: req.user!.id,
+      tenant_id: req.user!.tenant_id,
+      action: 'PROFILE_UPDATED',
+      details: { updated_fields: Object.keys(req.body) },
+      req
+    });
+
+    res.json({ 
+      message: 'Perfil actualizado exitosamente', 
+      user: data 
+    });
   } catch (error) {
     console.error('Update profile error:', error);
-    res.status(500).json({ error: 'Failed to update profile' });
+    res.status(500).json({ 
+      error: 'Error al actualizar perfil',
+      code: 'UPDATE_PROFILE_ERROR'
+    });
   }
-});
+};
 
-// =============================================================================
-// RUTAS DE TENANTS
-// =============================================================================
-
-app.post('/api/tenants', authenticateToken, validateBody(createTenantSchema), async (req: AuthenticatedRequest, res: Response) => {
+const getUserTenantsHandler: RequestHandler = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
-    const tenantData: CreateTenantRequest = req.body;
+    const { data, error } = await supabase
+      .from('user_tenants')
+      .select(`
+        rol,
+        activo,
+        created_at,
+        tenants (
+          id,
+          nombre,
+          ruc,
+          direccion,
+          telefono,
+          email,
+          logo_url
+        )
+      `)
+      .eq('usuario_id', req.user!.id)
+      .eq('activo', true)
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      throw error;
+    }
+
+    res.json({
+      success: true,
+      tenants: data
+    });
+  } catch (error) {
+    console.error('Get user tenants error:', error);
+    res.status(500).json({ 
+      error: 'Error al obtener empresas',
+      code: 'GET_TENANTS_ERROR'
+    });
+  }
+};
+
+// =============================================================================
+// HANDLERS DE TENANTS CORREGIDOS
+// =============================================================================
+
+const createTenantHandler: RequestHandler = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  try {
+    const tenantData = req.body;
+
+    const { data: existingTenant } = await supabase
+      .from('tenants')
+      .select('id')
+      .eq('ruc', tenantData.ruc)
+      .single();
+
+    if (existingTenant) {
+      res.status(409).json({ 
+        error: 'Ya existe una empresa con este RUC',
+        code: 'RUC_EXISTS'
+      });
+      return;
+    }
 
     const { data, error } = await supabase
       .from('tenants')
@@ -377,55 +721,44 @@ app.post('/api/tenants', authenticateToken, validateBody(createTenantSchema), as
       throw error;
     }
 
+    await logActivity({
+      tenant_id: data.id,
+      usuario_id: req.user!.id,
+      action: 'TENANT_CREATED',
+      details: { tenant_name: data.nombre, ruc: data.ruc },
+      req
+    });
+
     res.status(201).json({
-      message: 'Tenant created successfully',
+      message: 'Empresa creada exitosamente',
       tenant: data
     });
   } catch (error) {
     console.error('Create tenant error:', error);
-    res.status(500).json({ error: 'Failed to create tenant' });
+    res.status(500).json({ 
+      error: 'Error al crear empresa',
+      code: 'CREATE_TENANT_ERROR'
+    });
   }
-});
-
-app.get('/api/tenants', authenticateToken, async (req: AuthenticatedRequest, res: Response) => {
-  try {
-    const { data, error } = await supabase
-      .from('tenants')
-      .select(`
-        *,
-        user_tenants!inner(
-          rol,
-          activo
-        )
-      `)
-      .eq('user_tenants.usuario_id', req.user!.id)
-      .eq('user_tenants.activo', true);
-
-    if (error) {
-      throw error;
-    }
-
-    res.json(data);
-  } catch (error) {
-    console.error('Get tenants error:', error);
-    res.status(500).json({ error: 'Failed to get tenants' });
-  }
-});
+};
 
 // =============================================================================
-// RUTAS DE SUSCRIPCIONES
+// HANDLERS DE SUSCRIPCIONES 
 // =============================================================================
 
-app.get('/api/subscription/status', authenticateToken, async (req: AuthenticatedRequest, res: Response) => {
+const getSubscriptionStatusHandler: RequestHandler = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
-    const tenantId = req.query.tenant_id as string;
+    const tenantId = req.query.tenant_id as string || req.user!.tenant_id;
     const appId = req.query.app as string || 'elaris';
 
     if (!tenantId) {
-      return res.status(400).json({ error: 'tenant_id parameter required' });
+      res.status(400).json({ 
+        error: 'tenant_id parameter required',
+        code: 'MISSING_TENANT_ID'
+      });
+      return;
     }
 
-    // Verificar acceso al tenant
     const { data: userTenant, error: accessError } = await supabase
       .from('user_tenants')
       .select('*')
@@ -435,7 +768,11 @@ app.get('/api/subscription/status', authenticateToken, async (req: Authenticated
       .single();
 
     if (accessError || !userTenant) {
-      return res.status(403).json({ error: 'Access denied to this tenant' });
+      res.status(403).json({ 
+        error: 'Access denied to this tenant',
+        code: 'ACCESS_DENIED'
+      });
+      return;
     }
 
     const { data: subscription, error } = await supabase
@@ -448,221 +785,143 @@ app.get('/api/subscription/status', authenticateToken, async (req: Authenticated
       throw error;
     }
 
-    // Generar token firmado para modo offline
     const offlineToken = jwt.sign(
       {
         tenant_id: tenantId,
         app_id: appId,
         plan: subscription.plan,
         expires_at: subscription.expires_at,
-        features: subscription.features
+        features: subscription.features,
+        issued_at: Date.now()
       },
       config.JWT_SECRET,
       { expiresIn: '30d' }
     );
 
+    res.set({
+      'Cache-Control': 'private, max-age=300',
+      'X-Subscription-Status': subscription.active ? 'active' : 'inactive',
+      'X-Plan': subscription.plan
+    });
+
     res.json({
       ...subscription,
-      offline_token: offlineToken
+      offline_token: offlineToken,
+      user_role: userTenant.rol,
+      tenant_info: {
+        id: tenantId,
+        role: userTenant.rol
+      }
     });
   } catch (error) {
     console.error('Subscription status error:', error);
-    res.status(500).json({ error: 'Failed to get subscription status' });
+    res.status(500).json({ 
+      error: 'Failed to get subscription status',
+      code: 'SUBSCRIPTION_STATUS_ERROR'
+    });
   }
-});
+};
 
-app.post('/api/subscription/upgrade', authenticateToken, requireActiveSubscription(), async (req: AuthenticatedRequest, res: Response) => {
+const verifyOfflineTokenHandler: RequestHandler = async (req: Request, res: Response): Promise<void> => {
   try {
-    const { plan } = req.body;
-    const tenantId = req.user!.tenant_id!;
+    const { token } = req.body;
 
-    if (!['pro', 'enterprise'].includes(plan)) {
-      return res.status(400).json({ error: 'Invalid plan' });
+    if (!token) {
+      res.status(400).json({ 
+        error: 'Token required',
+        code: 'MISSING_TOKEN'
+      });
+      return;
     }
 
-    // Actualizar suscripción
-    const { data, error } = await supabase
-      .from('subscriptions')
-      .update({
-        plan,
-        expires_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(), // 30 días
-        updated_at: new Date().toISOString()
-      })
-      .eq('tenant_id', tenantId)
-      .eq('app_id', 'elaris')
-      .select()
-      .single();
+    const decoded = jwt.verify(token, config.JWT_SECRET) as any;
+    
+    const now = Date.now();
+    const tokenAge = now - decoded.issued_at;
+    const maxAge = 30 * 24 * 60 * 60 * 1000;
 
-    if (error) {
-      throw error;
+    if (tokenAge > maxAge) {
+      res.status(401).json({ 
+        error: 'Token expired',
+        code: 'TOKEN_EXPIRED'
+      });
+      return;
     }
 
-    // Actualizar características
-    const features = {
-      pro: {
-        max_users: 10,
-        max_storage_gb: 10,
-        enabled_modules: ['inventario', 'ventas', 'compras', 'reportes']
-      },
-      enterprise: {
-        max_users: 100,
-        max_storage_gb: 100,
-        enabled_modules: ['inventario', 'ventas', 'compras', 'reportes', 'avanzado']
-      }
-    };
-
-    await supabase
-      .from('tenant_features')
-      .update(features[plan as keyof typeof features])
-      .eq('tenant_id', tenantId)
-      .eq('app_id', 'elaris');
+    let isActive = true;
+    if (decoded.expires_at) {
+      isActive = new Date(decoded.expires_at) > new Date();
+    }
 
     res.json({
-      message: 'Subscription upgraded successfully',
-      subscription: data
+      valid: true,
+      active: isActive,
+      plan: decoded.plan,
+      features: decoded.features,
+      tenant_id: decoded.tenant_id,
+      app_id: decoded.app_id,
+      expires_at: decoded.expires_at
     });
+
   } catch (error) {
-    console.error('Upgrade subscription error:', error);
-    res.status(500).json({ error: 'Failed to upgrade subscription' });
+    res.status(401).json({ 
+      error: 'Invalid token',
+      code: 'INVALID_TOKEN'
+    });
   }
-});
+};
 
 // =============================================================================
-// WEBHOOKS DE STRIPE
+// CONFIGURACIÓN DE RUTAS
 // =============================================================================
 
-if (stripe && config.STRIPE_WEBHOOK_SECRET) {
-  app.post('/webhook/stripe', express.raw({ type: 'application/json' }), async (req: Request, res: Response) => {
-    try {
-      const sig = req.headers['stripe-signature'] as string;
-      const event = stripe!.webhooks.constructEvent(req.body, sig, config.STRIPE_WEBHOOK_SECRET!);
+// Rutas de autenticación
+app.post('/api/auth/login', validateBody(loginSchema), loginHandler);
+app.post('/api/auth/register', validateBody(registerSchema), registerHandler);
+app.post('/api/auth/select-tenant', authenticateToken, selectTenantHandler);
+app.post('/api/auth/logout', authenticateToken, logoutHandler);
 
-      switch (event.type) {
-        case 'customer.subscription.created':
-        case 'customer.subscription.updated':
-          await handleSubscriptionUpdate(event.data.object as Stripe.Subscription);
-          break;
-        
-        case 'customer.subscription.deleted':
-          await handleSubscriptionCancellation(event.data.object as Stripe.Subscription);
-          break;
-        
-        case 'invoice.payment_succeeded':
-          await handlePaymentSuccess(event.data.object as Stripe.Invoice);
-          break;
-        
-        case 'invoice.payment_failed':
-          await handlePaymentFailed(event.data.object as Stripe.Invoice);
-          break;
-      }
+// Rutas de usuarios
+app.get('/api/users/me', authenticateToken, getUserProfileHandler);
+app.put('/api/users/me', authenticateToken, updateUserProfileHandler);
+app.get('/api/users/tenants', authenticateToken, getUserTenantsHandler);
 
-      res.json({ received: true });
-    } catch (error) {
-      console.error('Webhook error:', error);
-      res.status(400).json({ error: 'Webhook failed' });
-    }
+// Rutas de tenants
+app.post('/api/tenants', authenticateToken, validateBody(createTenantSchema), createTenantHandler);
+
+// Rutas de suscripciones
+app.get('/api/subscription/status', authenticateToken, getSubscriptionStatusHandler);
+app.post('/api/subscription/verify-offline', verifyOfflineTokenHandler);
+
+// =============================================================================
+// MANEJO DE ERRORES MEJORADO
+// =============================================================================
+
+app.use('*', (req: Request, res: Response) => {
+  res.status(404).json({ 
+    error: 'Route not found',
+    code: 'ROUTE_NOT_FOUND',
+    path: req.originalUrl
   });
-}
-
-// =============================================================================
-// HANDLERS DE STRIPE
-// =============================================================================
-
-async function handleSubscriptionUpdate(subscription: Stripe.Subscription) {
-  // Actualizar suscripción en base de datos
-  const { error } = await supabase
-    .from('subscriptions')
-    .update({
-      status: subscription.status,
-      expires_at: new Date(subscription.current_period_end * 1000).toISOString(),
-      stripe_subscription_id: subscription.id
-    })
-    .eq('stripe_subscription_id', subscription.id);
-
-  if (error) {
-    console.error('Error updating subscription:', error);
-  }
-}
-
-async function handleSubscriptionCancellation(subscription: Stripe.Subscription) {
-  const { error } = await supabase
-    .from('subscriptions')
-    .update({
-      status: 'cancelled',
-      auto_renew: false
-    })
-    .eq('stripe_subscription_id', subscription.id);
-
-  if (error) {
-    console.error('Error cancelling subscription:', error);
-  }
-}
-
-async function handlePaymentSuccess(invoice: Stripe.Invoice) {
-  // Log successful payment
-  console.log('Payment succeeded for invoice:', invoice.id);
-}
-
-async function handlePaymentFailed(invoice: Stripe.Invoice) {
-  // Handle failed payment
-  console.log('Payment failed for invoice:', invoice.id);
-}
-
-// =============================================================================
-// RUTAS DE ADMINISTRACIÓN
-// =============================================================================
-
-app.get('/api/admin/stats', authenticateToken, async (req: AuthenticatedRequest, res: Response) => {
-  try {
-    // Solo admins pueden ver stats globales
-    const { data: adminCheck } = await supabase
-      .from('user_tenants')
-      .select('rol')
-      .eq('usuario_id', req.user!.id)
-      .eq('rol', 'admin')
-      .limit(1);
-
-    if (!adminCheck || adminCheck.length === 0) {
-      return res.status(403).json({ error: 'Admin access required' });
-    }
-
-    const [
-      { count: totalUsers },
-      { count: totalTenants },
-      { count: activeSubscriptions }
-    ] = await Promise.all([
-      supabase.from('users').select('*', { count: 'exact', head: true }),
-      supabase.from('tenants').select('*', { count: 'exact', head: true }),
-      supabase.from('subscriptions').select('*', { count: 'exact', head: true }).eq('status', 'active')
-    ]);
-
-    res.json({
-      total_users: totalUsers,
-      total_tenants: totalTenants,
-      active_subscriptions: activeSubscriptions
-    });
-  } catch (error) {
-    console.error('Admin stats error:', error);
-    res.status(500).json({ error: 'Failed to get admin stats' });
-  }
 });
-
-// =============================================================================
-// MANEJO DE ERRORES
-// =============================================================================
 
 app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
-  console.error('Unhandled error:', err);
+  console.error('Unhandled error:', {
+    message: err.message,
+    stack: err.stack,
+    url: req.url,
+    method: req.method,
+    body: req.body,
+    timestamp: new Date().toISOString()
+  });
   
   res.status(500).json({
     error: config.NODE_ENV === 'production' 
       ? 'Internal server error' 
-      : err.message
+      : err.message,
+    code: 'INTERNAL_ERROR',
+    timestamp: new Date().toISOString()
   });
-});
-
-app.use('*', (req: Request, res: Response) => {
-  res.status(404).json({ error: 'Route not found' });
 });
 
 // =============================================================================
@@ -674,14 +933,25 @@ const server = app.listen(config.PORT, () => {
   console.log(`📊 Environment: ${config.NODE_ENV}`);
   console.log(`🔐 Auth: Supabase ${config.SUPABASE_URL ? '✅' : '❌'}`);
   console.log(`💳 Payments: Stripe ${stripe ? '✅' : '❌'}`);
+  console.log(`🌐 CORS: ${config.FRONTEND_URLS.join(', ')}`);
+  console.log(`⚡ Server ready for connections`);
 });
 
-// Graceful shutdown
-process.on('SIGTERM', () => {
-  console.log('SIGTERM received, shutting down gracefully');
+const gracefulShutdown = () => {
+  console.log('🔄 Received shutdown signal, shutting down gracefully...');
+  
   server.close(() => {
-    console.log('Process terminated');
+    console.log('✅ HTTP server closed');
+    process.exit(0);
   });
-});
+
+  setTimeout(() => {
+    console.error('❌ Could not close connections in time, forcefully shutting down');
+    process.exit(1);
+  }, 30000);
+};
+
+process.on('SIGTERM', gracefulShutdown);
+process.on('SIGINT', gracefulShutdown);
 
 export default app;
