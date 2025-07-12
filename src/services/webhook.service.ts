@@ -38,7 +38,9 @@ interface WebhookDelivery {
 }
 
 class WebhookService {
-  private supabase = getSupabase();
+  private getSupabaseClient() {
+    return getSupabase();
+  }
   private redis = getRedis();
 
   async createWebhook(tenantId: string, webhook: Partial<Webhook>) {
@@ -46,7 +48,7 @@ class WebhookService {
       const id = uuidv4();
       const secret = webhook.secret || this.generateSecret();
 
-      const { data, error } = await this.supabase
+      const { data, error } = await this.getSupabaseClient()
         .from('webhooks')
         .insert({
           id,
@@ -77,7 +79,7 @@ class WebhookService {
       const cached = await this.redis.get(cacheKey);
       if (cached) return JSON.parse(cached);
 
-      let query = this.supabase
+      let query = this.getSupabaseClient()
         .from('webhooks')
         .select('*')
         .eq('tenant_id', tenantId);
@@ -99,7 +101,7 @@ class WebhookService {
 
   async updateWebhook(webhookId: string, updates: Partial<Webhook>) {
     try {
-      const { data, error } = await this.supabase
+      const { data, error } = await this.getSupabaseClient()
         .from('webhooks')
         .update({
           ...updates,
@@ -121,7 +123,7 @@ class WebhookService {
 
   async deleteWebhook(webhookId: string) {
     try {
-      const { error } = await this.supabase
+      const { error } = await this.getSupabaseClient()
         .from('webhooks')
         .delete()
         .eq('id', webhookId);
@@ -139,7 +141,7 @@ class WebhookService {
   async triggerWebhook(event: WebhookEvent) {
     try {
       // Get all active webhooks for this event type
-      const { data: webhooks } = await this.supabase
+      const { data: webhooks } = await this.getSupabaseClient()
         .from('webhooks')
         .select('*')
         .eq('tenant_id', event.tenant_id)
@@ -166,7 +168,7 @@ class WebhookService {
     try {
       const deliveryId = uuidv4();
       
-      const { error } = await this.supabase
+      const { error } = await this.getSupabaseClient()
         .from('webhook_deliveries')
         .insert({
           id: deliveryId,
@@ -214,7 +216,7 @@ class WebhookService {
       const success = response.status >= 200 && response.status < 300;
       const responseText = await response.text();
 
-      await this.supabase
+      await this.getSupabaseClient()
         .from('webhook_deliveries')
         .update({
           status: success ? 'success' : 'failed',
@@ -225,7 +227,7 @@ class WebhookService {
         })
         .eq('id', deliveryId);
 
-      await this.supabase
+      await this.getSupabaseClient()
         .from('webhooks')
         .update({
           last_triggered_at: new Date().toISOString()
@@ -235,7 +237,7 @@ class WebhookService {
     } catch (error) {
       logger.error('Process delivery failed:', error);
       
-      await this.supabase
+      await this.getSupabaseClient()
         .from('webhook_deliveries')
         .update({
           status: 'failed',

@@ -31,12 +31,14 @@ interface AnalyticsResult {
 }
 
 class AnalyticsService {
-  private supabase = getSupabase();
+  private getSupabaseClient() {
+    return getSupabase();
+  }
   private redis = getRedis();
 
   async trackEvent(event: AnalyticsEvent) {
     try {
-      const { error } = await this.supabase
+      const { error } = await this.getSupabaseClient()
         .from('analytics_events')
         .insert({
           tenant_id: event.tenantId,
@@ -76,7 +78,7 @@ class AnalyticsService {
       const results: AnalyticsResult[] = [];
 
       for (const event of (query.events || [])) {
-        const { data } = await this.supabase
+        const { data } = await this.getSupabaseClient()
           .from('analytics_events')
           .select('event, user_id, created_at')
           .eq('tenant_id', query.tenantId)
@@ -109,7 +111,7 @@ class AnalyticsService {
       let previousUsers = new Set<string>();
 
       for (let i = 0; i < events.length; i++) {
-        const { data } = await this.supabase
+        const { data } = await this.getSupabaseClient()
           .from('analytics_events')
           .select('user_id')
           .eq('tenant_id', tenantId)
@@ -146,7 +148,7 @@ class AnalyticsService {
   async getRetentionAnalytics(tenantId: string, cohortDate: Date, days: number = 30) {
     try {
       // Get users who performed any action on the cohort date
-      const { data: cohortUsers } = await this.supabase
+      const { data: cohortUsers } = await this.getSupabaseClient()
         .from('analytics_events')
         .select('user_id')
         .eq('tenant_id', tenantId)
@@ -159,7 +161,7 @@ class AnalyticsService {
       for (let day = 0; day < days; day++) {
         const checkDate = new Date(cohortDate.getTime() + day * 86400000);
         
-        const { data: activeUsers } = await this.supabase
+        const { data: activeUsers } = await this.getSupabaseClient()
           .from('analytics_events')
           .select('user_id')
           .eq('tenant_id', tenantId)

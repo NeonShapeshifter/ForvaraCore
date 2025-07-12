@@ -35,7 +35,9 @@ interface ReportData {
 }
 
 class ReportService {
-  private supabase = getSupabase();
+  private getSupabaseClient() {
+    return getSupabase();
+  }
   private redis = getRedis();
 
   async generateUsageReport(tenantId: string, startDate: Date, endDate: Date): Promise<ReportData> {
@@ -44,7 +46,7 @@ class ReportService {
       const dashboardMetrics = await metricsService.getDashboardMetrics(tenantId);
       
       // Get user activity
-      const { data: userActivity } = await this.supabase
+      const { data: userActivity } = await this.getSupabaseClient()
         .from('analytics_events')
         .select('event, user_id, created_at')
         .eq('tenant_id', tenantId)
@@ -99,7 +101,7 @@ class ReportService {
   async generateBillingReport(tenantId: string, startDate: Date, endDate: Date): Promise<ReportData> {
     try {
       // Get subscriptions
-      const { data: subscriptions } = await this.supabase
+      const { data: subscriptions } = await this.getSupabaseClient()
         .from('subscriptions')
         .select(`
           *,
@@ -165,7 +167,7 @@ class ReportService {
   async generateSecurityReport(tenantId: string, startDate: Date, endDate: Date): Promise<ReportData> {
     try {
       // Get security-related activities
-      const { data: securityEvents } = await this.supabase
+      const { data: securityEvents } = await this.getSupabaseClient()
         .from('activity_logs')
         .select('*')
         .eq('tenant_id', tenantId)
@@ -174,7 +176,7 @@ class ReportService {
         .lte('created_at', endDate.toISOString());
 
       // Get failed login attempts
-      const { data: failedLogins } = await this.supabase
+      const { data: failedLogins } = await this.getSupabaseClient()
         .from('analytics_events')
         .select('properties, created_at')
         .eq('tenant_id', tenantId)
@@ -225,7 +227,7 @@ class ReportService {
 
   async scheduleReport(config: ReportConfig) {
     try {
-      const { error } = await this.supabase
+      const { error } = await this.getSupabaseClient()
         .from('scheduled_reports')
         .insert({
           ...config,

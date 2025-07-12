@@ -30,7 +30,9 @@ interface InviteParams {
 }
 
 class TeamService {
-  private supabase = getSupabase();
+  private getSupabaseClient() {
+    return getSupabase();
+  }
   private redis = getRedis();
 
   async getMembers(tenantId: string, includeInvites = false) {
@@ -39,7 +41,7 @@ class TeamService {
       const cached = await this.redis.get(cacheKey);
       if (cached) return JSON.parse(cached);
 
-      let query = this.supabase
+      let query = this.getSupabaseClient()
         .from('company_members')
         .select(`
           *,
@@ -66,14 +68,14 @@ class TeamService {
   async inviteMember(params: InviteParams) {
     try {
       // Check if user already exists
-      const { data: existingUser } = await this.supabase
+      const { data: existingUser } = await this.getSupabaseClient()
         .from('users')
         .select('id')
         .eq('email', params.email)
         .single();
 
       // Check if already a member
-      const { data: existingMember } = await this.supabase
+      const { data: existingMember } = await this.getSupabaseClient()
         .from('company_members')
         .select('id, is_active')
         .eq('company_id', params.tenantId)
@@ -89,7 +91,7 @@ class TeamService {
 
       if (existingMember && !existingMember.is_active) {
         // Reactivate existing member
-        await this.supabase
+        await this.getSupabaseClient()
           .from('company_members')
           .update({
             is_active: true,
@@ -100,7 +102,7 @@ class TeamService {
           .eq('id', existingMember.id);
       } else {
         // Create new invitation
-        await this.supabase
+        await this.getSupabaseClient()
           .from('team_invitations')
           .insert({
             id: invitationId,
@@ -155,7 +157,7 @@ class TeamService {
 
   async updateMember(tenantId: string, memberId: string, updates: any, updatedBy: string) {
     try {
-      const { data: member } = await this.supabase
+      const { data: member } = await this.getSupabaseClient()
         .from('company_members')
         .select('*')
         .eq('id', memberId)
@@ -168,7 +170,7 @@ class TeamService {
 
       if (member.role === 'owner' && updates.role !== 'owner') {
         // Check if there's another owner
-        const { data: owners } = await this.supabase
+        const { data: owners } = await this.getSupabaseClient()
           .from('company_members')
           .select('id')
           .eq('company_id', tenantId)
@@ -180,7 +182,7 @@ class TeamService {
         }
       }
 
-      const { error } = await this.supabase
+      const { error } = await this.getSupabaseClient()
         .from('company_members')
         .update({
           ...updates,
@@ -209,7 +211,7 @@ class TeamService {
 
   async removeMember(tenantId: string, memberId: string, removedBy: string) {
     try {
-      const { data: member } = await this.supabase
+      const { data: member } = await this.getSupabaseClient()
         .from('company_members')
         .select('*, user:users(email)')
         .eq('id', memberId)
@@ -224,7 +226,7 @@ class TeamService {
         throw new ValidationError('Cannot remove an owner');
       }
 
-      const { error } = await this.supabase
+      const { error } = await this.getSupabaseClient()
         .from('company_members')
         .update({
           is_active: false,

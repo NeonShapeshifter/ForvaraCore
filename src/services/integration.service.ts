@@ -23,13 +23,15 @@ interface DataSharingRequest {
 }
 
 class IntegrationService {
-  private supabase = getSupabase();
+  private getSupabaseClient() {
+    return getSupabase();
+  }
   private redis = getRedis();
 
   async validateAccess(tenantId: string, appId: string, userId: string, permissions?: string[]) {
     try {
       // Check if app is installed for tenant
-      const { data: installation } = await this.supabase
+      const { data: installation } = await this.getSupabaseClient()
         .from('app_installations')
         .select('*')
         .eq('tenant_id', tenantId)
@@ -43,7 +45,7 @@ class IntegrationService {
 
       // Check permissions if specified
       if (permissions && permissions.length > 0) {
-        const { data: appPermissions } = await this.supabase
+        const { data: appPermissions } = await this.getSupabaseClient()
           .from('app_permissions')
           .select('permission')
           .eq('installation_id', installation.id)
@@ -81,7 +83,7 @@ class IntegrationService {
       await this.validateAccess(request.tenant_id, request.source_app_id, 'system');
       await this.validateAccess(request.tenant_id, request.target_app_id, 'system');
 
-      const { data, error } = await this.supabase
+      const { data, error } = await this.getSupabaseClient()
         .from('data_sharing_agreements')
         .insert({
           id,
@@ -110,7 +112,7 @@ class IntegrationService {
       const cached = await this.redis.get(cacheKey);
       if (cached) return JSON.parse(cached);
 
-      const { data, error } = await this.supabase
+      const { data, error } = await this.getSupabaseClient()
         .from('app_installations')
         .select(`
           *,
@@ -132,7 +134,7 @@ class IntegrationService {
 
   async configure(config: IntegrationConfig) {
     try {
-      const { data: installation } = await this.supabase
+      const { data: installation } = await this.getSupabaseClient()
         .from('app_installations')
         .select('id')
         .eq('tenant_id', config.tenant_id)
@@ -143,7 +145,7 @@ class IntegrationService {
         throw new NotFoundError('App not installed');
       }
 
-      const { error } = await this.supabase
+      const { error } = await this.getSupabaseClient()
         .from('app_installations')
         .update({
           config: config.config,
@@ -155,7 +157,7 @@ class IntegrationService {
 
       // Update permissions
       if (config.permissions) {
-        await this.supabase
+        await this.getSupabaseClient()
           .from('app_permissions')
           .delete()
           .eq('installation_id', installation.id);
@@ -166,7 +168,7 @@ class IntegrationService {
           granted_at: new Date().toISOString()
         }));
 
-        await this.supabase
+        await this.getSupabaseClient()
           .from('app_permissions')
           .insert(permissions);
       }

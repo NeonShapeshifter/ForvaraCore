@@ -35,7 +35,9 @@ interface DashboardMetrics {
 }
 
 class MetricsService {
-  private supabase = getSupabase();
+  private getSupabaseClient() {
+    return getSupabase();
+  }
   private redis = getRedis();
 
   async getDashboardMetrics(tenantId: string): Promise<DashboardMetrics> {
@@ -45,7 +47,7 @@ class MetricsService {
       if (cached) return JSON.parse(cached);
 
       // Get user metrics
-      const { data: users } = await this.supabase
+      const { data: users } = await this.getSupabaseClient()
         .from('company_members')
         .select('user_id, created_at, last_login_at')
         .eq('company_id', tenantId)
@@ -62,7 +64,7 @@ class MetricsService {
       ).length || 0;
 
       // Get app metrics
-      const { data: apps } = await this.supabase
+      const { data: apps } = await this.getSupabaseClient()
         .from('app_installations')
         .select('app_id, is_active, last_used_at')
         .eq('tenant_id', tenantId);
@@ -72,7 +74,7 @@ class MetricsService {
       ).length || 0;
 
       // Get storage metrics
-      const { data: storage } = await this.supabase
+      const { data: storage } = await this.getSupabaseClient()
         .from('companies')
         .select('storage_used, storage_limit')
         .eq('id', tenantId)
@@ -171,7 +173,7 @@ class MetricsService {
 
   async recordEvent(tenantId: string, event: string, metadata?: any) {
     try {
-      const { error } = await this.supabase
+      const { error } = await this.getSupabaseClient()
         .from('analytics_events')
         .insert({
           tenant_id: tenantId,
