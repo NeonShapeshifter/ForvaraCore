@@ -18,7 +18,7 @@ import {
 } from '../types';
 
 // const supabase = getSupabase(); // Moved to lazy loading
-const redis = getRedis();
+// const redis = getRedis(); // Moved to lazy loading
 
 interface DashboardStats {
   apps: {

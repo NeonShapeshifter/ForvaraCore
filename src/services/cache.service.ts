@@ -2,7 +2,7 @@ import { getRedis } from '../config/redis';
 import { logger } from '../config/logger';
 import crypto from 'crypto';
 
-const redis = getRedis();
+// const redis = getRedis(); // Moved to lazy loading
 
 interface CacheOptions {
   ttl?: number; // Time to live in seconds

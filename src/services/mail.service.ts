@@ -20,7 +20,7 @@ import { ACTIVITY_ACTIONS, SOCKET_EVENTS } from '../constants';
 import { encrypt, decrypt } from '../utils/crypto';
 
 // const supabase = getSupabase(); // Moved to lazy loading
-const redis = getRedis();
+// const redis = getRedis(); // Moved to lazy loading
 
 class MailService {
   /**
