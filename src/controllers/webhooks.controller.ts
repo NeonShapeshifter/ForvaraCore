@@ -12,7 +12,7 @@ import { logger } from '../config/logger';
 import { config } from '../config';
 import { ACTIVITY_ACTIONS } from '../constants';
 
-const supabase = getSupabase();
+// const supabase = getSupabase(); // Moved to lazy loading
 
 /**
  * Webhook de Stripe para sincronizar eventos de suscripciones

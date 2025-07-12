@@ -24,8 +24,8 @@ const stripe = new Stripe(config.STRIPE_SECRET_KEY!, {
   apiVersion: '2023-10-16'
 });
 
-const supabase = getSupabase();
-const redis = getRedis();
+// const supabase = getSupabase(); // Moved to lazy loading
+// const redis = getRedis(); // Moved to lazy loading
 
 interface CreateSubscriptionParams {
   tenant_id: string;

@@ -45,10 +45,6 @@ export const connectDatabase = async (): Promise<void> => {
 
 export const getSupabase = (): SupabaseClient => {
   if (!supabase) {
-    // Debug: mostrar stack trace para ver quién llama a getSupabase
-    console.log('🔍 getSupabase() called from:', new Error().stack?.split('\n')[1]);
-    console.log('🔍 SUPABASE_URL:', process.env.SUPABASE_URL ? 'LOADED' : 'NOT LOADED');
-    
     // Verificar que las variables estén cargadas
     if (!process.env.SUPABASE_URL) {
       throw new Error('SUPABASE_URL not loaded. Environment variables not available.');
