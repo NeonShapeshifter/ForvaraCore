@@ -16,7 +16,7 @@ import {
 } from '../types';
 import { ACTIVITY_ACTIONS } from '../constants';
 
-const supabase = getSupabase();
+// const supabase = getSupabase(); // Moved to lazy loading
 const redis = getRedis();
 
 interface TrialConversionOffer {

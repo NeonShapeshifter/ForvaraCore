@@ -26,8 +26,8 @@ import {
   formatBytes 
 } from '../utils/helpers';
 
-const supabase = getSupabase();
-const redis = getRedis();
+// const supabase = getSupabase(); // Moved to lazy loading
+// const redis = getRedis(); // Moved to lazy loading
 
 class FileService {
   /**

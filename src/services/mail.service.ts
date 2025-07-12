@@ -19,7 +19,7 @@ import { websocketService } from './websocket.service';
 import { ACTIVITY_ACTIONS, SOCKET_EVENTS } from '../constants';
 import { encrypt, decrypt } from '../utils/crypto';
 
-const supabase = getSupabase();
+// const supabase = getSupabase(); // Moved to lazy loading
 const redis = getRedis();
 
 class MailService {

@@ -14,7 +14,7 @@ const stripe = new Stripe(config.STRIPE_SECRET_KEY!, {
   typescript: true
 });
 
-const supabase = getSupabase();
+// const supabase = getSupabase(); // Moved to lazy loading
 
 class StripeService {
   /**
