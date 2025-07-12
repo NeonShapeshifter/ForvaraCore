@@ -2,9 +2,6 @@ import { getSupabase } from '../config/database';
 import { getRedis } from '../config/redis';
 import { CACHE_KEYS } from '../constants';
 
-const supabase = getSupabase();
-const redis = getRedis();
-
 export interface TenantUsage {
   storage_used: number;
   storage_limit: number;
@@ -38,6 +35,7 @@ export interface UsageAnalysis {
  */
 export async function getTenantUsage(tenantId: string): Promise<TenantUsage> {
   try {
+    const redis = getRedis();
     const cacheKey = CACHE_KEYS.TENANT_USAGE(tenantId);
     const cached = await redis.get(cacheKey);
     
@@ -46,6 +44,7 @@ export async function getTenantUsage(tenantId: string): Promise<TenantUsage> {
     }
 
     // Get storage usage
+    const supabase = getSupabase();
     const { data: storageData } = await supabase
       .from('files')
       .select('size_bytes')
@@ -107,6 +106,7 @@ export async function getTenantUsage(tenantId: string): Promise<TenantUsage> {
 export async function calculateTenantLimits(tenantId: string): Promise<TenantLimits> {
   try {
     // Get active subscriptions
+    const supabase = getSupabase();
     const { data: subscriptions } = await supabase
       .from('subscriptions')
       .select(`

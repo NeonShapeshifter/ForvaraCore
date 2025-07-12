@@ -19,10 +19,15 @@ import { subscriptionService } from './subscription.service';
 import { ACTIVITY_ACTIONS, USER_ROLES } from '../constants';
 import { validateRUC } from '../utils/helpers';
 
-const supabase = getSupabase();
-const redis = getRedis();
-
 class TenantService {
+  private getSupabase() {
+    return getSupabase();
+  }
+
+  private getRedis() {
+    return getRedis();
+  }
+
   /**
    * Crear nuevo tenant
    */

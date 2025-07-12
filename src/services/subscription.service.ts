@@ -26,14 +26,20 @@ const stripe = new Stripe(config.STRIPE_SECRET_KEY!, {
   apiVersion: '2023-10-16'
 });
 
-const supabase = getSupabase();
-const redis = getRedis();
-
 class SubscriptionService {
+  private getSupabase() {
+    return getSupabase();
+  }
+
+  private getRedis() {
+    return getRedis();
+  }
+
   /**
    * Obtener planes disponibles
    */
   async getAvailablePlans(appId?: string): Promise<SubscriptionPlan[]> {
+    const redis = this.getRedis();
     const cacheKey = appId ? `plans:${appId}` : 'plans:all';
     const cached = await redis.get(cacheKey);
     
@@ -41,6 +47,7 @@ class SubscriptionService {
       return JSON.parse(cached);
     }
 
+    const supabase = this.getSupabase();
     let query = supabase
       .from('subscription_plans')
       .select(`
@@ -74,6 +81,7 @@ class SubscriptionService {
   async createTrialSubscription(tenantId: string): Promise<Subscription> {
     try {
       // Obtener plan trial
+      const supabase = this.getSupabase();
       const { data: trialPlan } = await supabase
         .from('subscription_plans')
         .select('*')
