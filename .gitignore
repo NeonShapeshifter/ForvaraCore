@@ -11,11 +11,14 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 
-# Env files
+# Env files - CRITICAL SECURITY
 .env
 .env.local
+.env.development
 .env.development.local
+.env.test
 .env.test.local
+.env.production
 .env.production.local
 
 # VSCode
@@ -36,9 +39,40 @@ drizzle/
 *.sqlite
 *.db
 
+# Test files  
+test-db-connection.js
+test-services.js
+test-services-simple.js
+
+# Upload directories
+uploads/
+temp/
+
+# Railway & Vercel
+.railway/
+.vercel
+
 # Others
 *.log
 coverage/
 
 # TypeScript
 *.tsbuildinfo
+
+# Documentación interna/privada (solo para desarrollo)
+CLAUDE.md
+DEPLOYMENT.md
+INTEGRATION_ROADMAP.md
+sql/
+*.sql
+
+# Scripts de deployment y desarrollo (contienen info sensible)
+deploy.sh
+start.sh
+docker-compose.prod.yml
+
+# Archivos de test temporales
+test-*.js
+
+# Mantener solo README público
+# README.md se mantiene para GitHub

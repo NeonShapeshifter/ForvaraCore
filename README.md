@@ -136,5 +136,5 @@ Includes:
 
 ## 🛡 License
 
-© 2025 ForvaraSoft – All rights reserved.  
-Private project. Not licensed for redistribution.
+© 2025 Forvara – All rights reserved.  
+**ForvaraCore** - Powering the future of business software 🚀
