@@ -20,6 +20,7 @@ import { notificationService } from './notification.service';
 import { tenantService } from './tenant.service';
 import { addEmailJob } from '../queues';
 import { ACTIVITY_ACTIONS } from '../constants';
+import { getTenantUsage, calculateTenantLimits, analyzeUsage } from '../utils/subscription.helpers';
 
 const stripe = new Stripe(config.STRIPE_SECRET_KEY!, {
   apiVersion: '2023-10-16'
@@ -841,3 +842,6 @@ class SubscriptionService {
 }
 
 export const subscriptionService = new SubscriptionService();
+
+// Re-export helper functions for middleware
+export { getTenantUsage, calculateTenantLimits, analyzeUsage };

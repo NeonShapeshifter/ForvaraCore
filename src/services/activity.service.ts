@@ -767,3 +767,6 @@ class ActivityService {
 }
 
 export const activityService = new ActivityService();
+
+// Export alias for logActivity
+export const logActivity = activityService.log.bind(activityService);

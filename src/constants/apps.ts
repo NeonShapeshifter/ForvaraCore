@@ -1,6 +1,11 @@
+import { SubscriptionStatus } from './index';
+
 /**
  * Aplicaciones del ecosistema Forvara
  */
+
+// Re-export for convenience
+export { SubscriptionStatus };
 export interface ForvaraApp {
   id: string;
   name: string;
@@ -232,4 +237,12 @@ export const AppIds = {
 export function appRequiresSubscription(appId: string): boolean {
   const app = FORVARA_APPS[appId];
   return app ? app.pricing.monthly > 0 : false;
+}
+
+/**
+ * Check if subscription is active
+ */
+export function isActiveSubscription(status: string): boolean {
+  const activeStatuses = ['active', 'trialing'];
+  return activeStatuses.includes(status);
 }

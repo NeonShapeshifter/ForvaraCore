@@ -41,6 +41,18 @@ export function closeQueues() {
   return Promise.resolve();
 }
 
+export const addEmailJob = (type: string, data: any) => {
+  return emailQueue.add(type, data);
+};
+
+export const addNotificationJob = (type: string, data: any) => {
+  return notificationQueue.add(type, data);
+};
+
+export const addFileProcessingJob = (type: string, data: any) => {
+  return fileProcessingQueue.add(type, data);
+};
+
 export default {
   emailQueue,
   notificationQueue,

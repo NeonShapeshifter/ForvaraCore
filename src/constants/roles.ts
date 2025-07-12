@@ -219,3 +219,27 @@ export const RoleColors: Record<UserRole, string> = {
   [UserRole.VIEWER]: '#96CEB4',
   [UserRole.GUEST]: '#DDA0DD'
 };
+
+/**
+ * Check if user has a specific role
+ */
+export function hasRole(userRole: UserRole | string, requiredRole: UserRole): boolean {
+  const userRoleEnum = userRole as UserRole;
+  return RoleHierarchy[userRoleEnum] >= RoleHierarchy[requiredRole];
+}
+
+/**
+ * Check if user has a specific permission
+ */
+export function hasPermission(userRole: UserRole | string, permission: string): boolean {
+  return roleHasPermission(userRole as UserRole, permission);
+}
+
+/**
+ * Check if user can manage another role
+ */
+export function canManageRole(userRole: UserRole | string, targetRole: UserRole | string): boolean {
+  const userRoleEnum = userRole as UserRole;
+  const targetRoleEnum = targetRole as UserRole;
+  return isRoleSuperior(userRoleEnum, targetRoleEnum);
+}

@@ -283,3 +283,26 @@ export function createDynamicValidator(fields: Record<string, z.ZodSchema>) {
 export function mergeSchemas(...schemas: z.ZodSchema[]): z.ZodSchema {
   return schemas.reduce((acc, schema) => acc.and(schema));
 }
+
+// Auth validators for middleware
+export const loginValidator = loginSchema;
+export const registerValidator = registerSchema;
+
+export const forgotPasswordValidator = z.object({
+  username: z.string().trim().min(1, 'Username requerido')
+});
+
+export const resetPasswordValidator = z.object({
+  token: z.string().min(1, 'Token requerido'),
+  password: passwordSchema
+});
+
+export const changePasswordValidator = changePasswordSchema;
+
+export const refreshTokenValidator = z.object({
+  refreshToken: z.string().min(1, 'Refresh token requerido')
+});
+
+export const selectTenantValidator = z.object({
+  tenantId: uuidSchema
+});

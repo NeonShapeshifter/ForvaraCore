@@ -233,3 +233,63 @@ export const maskPhone = (phone: string): string => {
   
   return `${visibleStart}${maskedMiddle}${visibleEnd}`;
 };
+
+export const getErrorMessage = (error: any): string => {
+  if (typeof error === 'string') return error;
+  if (error?.message) return error.message;
+  if (error?.error?.message) return error.error.message;
+  return 'An unexpected error occurred';
+};
+
+export const generateCode = (length: number = 6): string => {
+  const digits = '0123456789';
+  let code = '';
+  for (let i = 0; i < length; i++) {
+    code += digits.charAt(Math.floor(Math.random() * digits.length));
+  }
+  return code;
+};
+
+export const validateRUC = (ruc: string): boolean => {
+  const cleanRuc = ruc.replace(/\D/g, '');
+  if (cleanRuc.length !== 11) return false;
+  
+  const firstTwo = parseInt(cleanRuc.substring(0, 2));
+  return firstTwo === 10 || firstTwo === 15 || firstTwo === 17 || firstTwo === 20;
+};
+
+export const sanitizeFilename = (filename: string): string => {
+  return filename
+    .replace(/[^a-zA-Z0-9.-]/g, '_')
+    .replace(/_{2,}/g, '_')
+    .replace(/^_+|_+$/g, '');
+};
+
+export const getImageMetadata = async (file: Express.Multer.File): Promise<{
+  width?: number;
+  height?: number;
+  format?: string;
+  size: number;
+}> => {
+  try {
+    const sharp = await import('sharp');
+    const metadata = await sharp.default(file.buffer).metadata();
+    return {
+      width: metadata.width,
+      height: metadata.height,
+      format: metadata.format,
+      size: file.size
+    };
+  } catch (error) {
+    return { size: file.size };
+  }
+};
+
+export const formatBytes = (bytes: number, decimals: number = 2): string => {
+  if (bytes === 0) return '0 Bytes';
+  const k = 1024;
+  const dm = decimals < 0 ? 0 : decimals;
+  const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+};

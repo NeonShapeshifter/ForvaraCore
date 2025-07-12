@@ -168,3 +168,10 @@ export const ErrorStatusCodes: Record<ErrorCode, number> = {
   [ErrorCode.PRECONDITION_FAILED]: 412,
   [ErrorCode.UNPROCESSABLE_ENTITY]: 422
 };
+
+/**
+ * Helper function to get error message
+ */
+export const getErrorMessage = (code: ErrorCode): string => {
+  return ErrorMessages[code] || 'Unknown error';
+};
