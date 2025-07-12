@@ -1,115 +1,34 @@
-import { ApiResponse, PaginatedResponse } from '../types';
+import { Response } from 'express';
+import { ApiResponse } from '@/types';
 
-/**
- * Crear respuesta API estandarizada
- */
-export function createApiResponse<T = any>(
-  success: boolean,
-  data: T | null = null,
-  message?: string,
-  error?: string,
-  code?: string,
-  meta?: Record<string, any>
-): ApiResponse<T> {
-  const response: ApiResponse<T> = {
-    success,
-    data: data || undefined,
-    message,
-    error,
-    code,
-    meta: {
-      ...meta,
-      timestamp: new Date().toISOString()
-    }
+export const success = <T>(res: Response, data: T, status = 200): Response => {
+  const response: ApiResponse<T> = { data };
+  return res.status(status).json(response);
+};
+
+export const error = (res: Response, message: string, status = 400, code?: string): Response => {
+  const response: ApiResponse = {
+    error: { message, code }
   };
+  return res.status(status).json(response);
+};
 
-  // Limpiar propiedades undefined
-  Object.keys(response).forEach(key => {
-    if (response[key as keyof ApiResponse<T>] === undefined) {
-      delete response[key as keyof ApiResponse<T>];
-    }
-  });
+export const notFound = (res: Response, resource = 'Resource'): Response => {
+  return error(res, `${resource} not found`, 404, 'NOT_FOUND');
+};
 
-  return response;
-}
+export const unauthorized = (res: Response, message = 'Unauthorized'): Response => {
+  return error(res, message, 401, 'UNAUTHORIZED');
+};
 
-/**
- * Crear respuesta paginada
- */
-export function createPaginatedResponse<T>(
-  data: T[],
-  page: number,
-  limit: number,
-  total: number,
-  meta?: Record<string, any>
-): ApiResponse<PaginatedResponse<T>> {
-  return createApiResponse(
-    true,
-    {
-      data,
-      pagination: {
-        page,
-        limit,
-        total,
-        pages: Math.ceil(total / limit),
-        totalPages: Math.ceil(total / limit),
-        hasNext: page * limit < total,
-        hasPrev: page > 1
-      }
-    },
-    undefined,
-    undefined,
-    undefined,
-    meta
-  );
-}
+export const forbidden = (res: Response, message = 'Forbidden'): Response => {
+  return error(res, message, 403, 'FORBIDDEN');
+};
 
-/**
- * Crear respuesta de error
- */
-export function createErrorResponse(
-  error: string,
-  code: string = 'INTERNAL_ERROR',
-  statusCode: number = 500,
-  details?: any
-): ApiResponse<null> {
-  return createApiResponse(
-    false,
-    null,
-    undefined,
-    error,
-    code,
-    {
-      statusCode,
-      details
-    }
-  );
-}
+export const conflict = (res: Response, message: string): Response => {
+  return error(res, message, 409, 'CONFLICT');
+};
 
-/**
- * Crear respuesta exitosa
- */
-export function createSuccessResponse<T = any>(
-  data: T,
-  message?: string,
-  meta?: Record<string, any>
-): ApiResponse<T> {
-  return createApiResponse(true, data, message, undefined, undefined, meta);
-}
-
-/**
- * Formatear errores de validación
- */
-export function formatValidationErrors(errors: any[]): Record<string, string[]> {
-  const formatted: Record<string, string[]> = {};
-
-  errors.forEach(error => {
-    const field = error.path?.join('.') || 'general';
-    if (!formatted[field]) {
-      formatted[field] = [];
-    }
-    formatted[field].push(error.message);
-  });
-
-  return formatted;
-}
+export const serverError = (res: Response, message = 'Internal server error'): Response => {
+  return error(res, message, 500, 'SERVER_ERROR');
+};

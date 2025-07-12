@@ -1,192 +1,78 @@
 import { Response, NextFunction } from 'express';
-import { AuthenticatedRequest } from '../types';
-import { getSupabase } from '../config/database';
-import { CacheService } from '../config/redis';
-import { ErrorCode } from '../constants/errors';
-import { createApiResponse } from '../utils/responses';
-import { logger } from '../config/logger';
-import { CACHE_KEYS } from '../constants';
+import { AuthRequest } from '@/types';
+import { forbidden } from '@/utils/responses';
+import { supabase } from '@/config/database';
+import { safeSupabaseQuery } from '@/utils/safeAsync';
 
-const tenantCache = new CacheService('tenant', 300); // 5 minutos
-
-export const injectTenant = async (
-  req: AuthenticatedRequest,
-  res: Response,
-  next: NextFunction
-): Promise<void> => {
+export const requireTenant = async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
-    // Si no hay tenantId, continuar
-    if (!req.tenantId) {
-      return next();
+    if (!req.user) {
+      return forbidden(res, 'Authentication required');
     }
 
-    // Intentar obtener de caché
-    const cacheKey = CACHE_KEYS.TENANT(req.tenantId);
-    const cachedTenant = await tenantCache.get(cacheKey);
+    const tenantId = req.headers['x-tenant-id'] as string;
     
-    if (cachedTenant) {
-      req.tenant = cachedTenant;
-      return next();
+    if (!tenantId) {
+      return forbidden(res, 'Tenant ID required');
     }
 
-    // Obtener de base de datos
-    const supabase = getSupabase();
-    const { data: tenant, error } = await supabase
-      .from('tenants')
-      .select('*')
-      .eq('id', req.tenantId)
-      .eq('activo', true)
-      .is('deleted_at', null)
-      .single();
+    // Verificar que el usuario pertenece al tenant (con fallback seguro)
+    const { data: membership } = await safeSupabaseQuery(
+      () => supabase
+        .from('company_members')
+        .select('*, companies(*)')
+        .eq('user_id', req.user!.id)
+        .eq('company_id', tenantId)
+        .eq('status', 'active')
+        .single(),
+      { data: null, error: null }
+    );
 
-    if (error || !tenant) {
-      logger.warn({
-        tenantId: req.tenantId,
-        error: error?.message,
-        requestId: req.requestId
-      }, 'Tenant not found or inactive');
-      
-      res.status(404).json(createApiResponse(
-        false,
-        null,
-        'Empresa no encontrada',
-        'La empresa no existe o está inactiva',
-        ErrorCode.TENANT_ACCESS_DENIED
-      ));
-      return;
+    if (!membership) {
+      return forbidden(res, 'Access denied to this company');
     }
 
-    // Guardar en caché
-    await tenantCache.set(cacheKey, tenant);
+    // Adjuntar company al request
+    req.company = (membership as any).companies;
     
-    req.tenant = tenant;
     next();
-  } catch (error: any) {
-    logger.error({
-      error: error.message,
-      tenantId: req.tenantId,
-      requestId: req.requestId
-    }, 'Error injecting tenant');
-    
-    res.status(500).json(createApiResponse(
-      false,
-      null,
-      'Error interno',
-      'Error al verificar acceso a la empresa',
-      ErrorCode.INTERNAL_ERROR
-    ));
+  } catch (error) {
+    console.error('❌ Tenant middleware error:', error);
+    return forbidden(res, 'Tenant verification failed');
   }
 };
 
-export const requireTenant = (
-  req: AuthenticatedRequest,
-  res: Response,
-  next: NextFunction
-): void => {
-  if (!req.tenantId) {
-    res.status(400).json(createApiResponse(
-      false,
-      null,
-      'Tenant requerido',
-      'Debe seleccionar una empresa para continuar',
-      ErrorCode.VALIDATION_ERROR
-    ));
-    return;
-  }
-
-  if (!req.tenant) {
-    res.status(404).json(createApiResponse(
-      false,
-      null,
-      'Empresa no encontrada',
-      'La empresa seleccionada no existe',
-      ErrorCode.TENANT_ACCESS_DENIED
-    ));
-    return;
-  }
-
-  next();
-};
-
-// Verificar que el usuario pertenece al tenant
-export const verifyTenantAccess = async (
-  req: AuthenticatedRequest,
-  res: Response,
-  next: NextFunction
-): Promise<void> => {
+export const optionalTenant = async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
-    if (!req.userId || !req.tenantId) {
-      res.status(403).json(createApiResponse(
-        false,
-        null,
-        'Acceso denegado',
-        'Usuario o empresa no especificados',
-        ErrorCode.FORBIDDEN
-      ));
-      return;
+    if (!req.user) {
+      return next(); // No user, skip tenant check
     }
 
-    const supabase = getSupabase();
-    const { data: userTenant } = await supabase
-      .from('user_tenants')
-      .select('rol, activo')
-      .eq('usuario_id', req.userId)
-      .eq('tenant_id', req.tenantId)
-      .eq('activo', true)
-      .is('deleted_at', null)
-      .single();
-
-    if (!userTenant) {
-      logger.warn({
-        userId: req.userId,
-        tenantId: req.tenantId,
-        requestId: req.requestId
-      }, 'User does not belong to tenant');
-      
-      res.status(403).json(createApiResponse(
-        false,
-        null,
-        'Sin acceso a la empresa',
-        'No tienes acceso a esta empresa',
-        ErrorCode.TENANT_ACCESS_DENIED
-      ));
-      return;
-    }
-
-    req.userRole = userTenant.rol;
-    next();
-  } catch (error: any) {
-    logger.error({
-      error: error.message,
-      userId: req.userId,
-      tenantId: req.tenantId,
-      requestId: req.requestId
-    }, 'Error verifying tenant access');
+    const tenantId = req.headers['x-tenant-id'] as string;
     
-    res.status(500).json(createApiResponse(
-      false,
-      null,
-      'Error de verificación',
-      'Error al verificar acceso a la empresa',
-      ErrorCode.INTERNAL_ERROR
-    ));
+    if (!tenantId) {
+      return next(); // No tenant ID, continue
+    }
+
+    // Intentar cargar tenant (silenciosamente)
+    const { data: membership } = await safeSupabaseQuery(
+      () => supabase
+        .from('company_members')
+        .select('*, companies(*)')
+        .eq('user_id', req.user!.id)
+        .eq('company_id', tenantId)
+        .eq('status', 'active')
+        .single(),
+      { data: null, error: null }
+    );
+
+    if (membership) {
+      req.company = (membership as any).companies;
+    }
+    
+    next();
+  } catch (error) {
+    // Error silencioso, continúa sin tenant
+    next();
   }
-};
-
-// Obtener tenant desde header o query
-export const extractTenant = (
-  req: AuthenticatedRequest,
-  res: Response,
-  next: NextFunction
-): void => {
-  // Prioridad: header > query > body
-  const tenantId = req.headers['x-tenant-id'] as string || 
-                   req.query.tenantId as string || 
-                   req.body?.tenantId;
-
-  if (tenantId) {
-    req.tenantId = tenantId;
-  }
-
-  next();
 };
