@@ -1,9 +1,6 @@
-import dotenv from 'dotenv';
-import path from 'path';
-
-// Cargar .env según ambiente
-const envFile = process.env.NODE_ENV === 'production' ? '.env.production' : '.env';
-dotenv.config({ path: path.resolve(process.cwd(), envFile) });
+// dotenv/config se carga en server.ts, no aquí
+// import dotenv from 'dotenv';
+// import path from 'path';
 
 export interface Config {
   // Server

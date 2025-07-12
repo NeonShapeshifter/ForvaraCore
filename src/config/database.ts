@@ -6,7 +6,11 @@ let supabase: SupabaseClient;
 
 export const connectDatabase = async (): Promise<void> => {
   try {
-    supabase = createClient(config.SUPABASE_URL, config.SUPABASE_SERVICE_KEY, {
+    if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_KEY) {
+      throw new Error('Missing Supabase environment variables');
+    }
+    
+    supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY, {
       auth: {
         autoRefreshToken: false,
         persistSession: false,
@@ -41,8 +45,20 @@ export const connectDatabase = async (): Promise<void> => {
 
 export const getSupabase = (): SupabaseClient => {
   if (!supabase) {
+    // Debug: mostrar stack trace para ver quién llama a getSupabase
+    console.log('🔍 getSupabase() called from:', new Error().stack?.split('\n')[1]);
+    console.log('🔍 SUPABASE_URL:', process.env.SUPABASE_URL ? 'LOADED' : 'NOT LOADED');
+    
+    // Verificar que las variables estén cargadas
+    if (!process.env.SUPABASE_URL) {
+      throw new Error('SUPABASE_URL not loaded. Environment variables not available.');
+    }
+    if (!process.env.SUPABASE_SERVICE_KEY) {
+      throw new Error('SUPABASE_SERVICE_KEY not loaded. Environment variables not available.');
+    }
+    
     // Inicializar automáticamente para desarrollo
-    supabase = createClient(config.SUPABASE_URL, config.SUPABASE_SERVICE_KEY, {
+    supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY, {
       auth: {
         autoRefreshToken: false,
         persistSession: false,
