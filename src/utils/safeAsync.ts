@@ -1,5 +1,5 @@
 import { Response } from 'express';
-import { serverError } from './responses';
+import { errorResponse } from './responses.js';
 
 // Wrapper para funciones async que previene crashes
 export const safeAsync = (fn: Function) => {
@@ -25,7 +25,7 @@ export const safeAsync = (fn: Function) => {
       }
       
       // Error genérico - NO CRASHEAR NUNCA
-      return serverError(res, 'Something went wrong, but we\'re still alive! 🚀');
+      return res.status(500).json(errorResponse('Something went wrong, but we\'re still alive! 🚀'));
     }
   };
 };

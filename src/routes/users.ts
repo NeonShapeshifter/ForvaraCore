@@ -40,6 +40,39 @@ router.patch('/me', authenticate, safeAsync(async (req: any, res: any) => {
   }
 }));
 
+// PATCH /api/users/:id - Update user by ID (alias for /me when ID matches)
+router.patch('/:id', authenticate, safeAsync(async (req: any, res: any) => {
+  const { id } = req.params;
+  
+  // Only allow users to update their own profile
+  if (id !== req.user.id) {
+    return error(res, 'Unauthorized to update this profile', 403);
+  }
+  
+  try {
+    const updatedUser = await userService.updateProfile(id, req.body);
+    return success(res, updatedUser);
+  } catch (err: any) {
+    return error(res, err.message, 400);
+  }
+}));
+
+// PATCH /api/users/notifications - Update notification preferences
+router.patch('/notifications', authenticate, safeAsync(async (req: any, res: any) => {
+  const { email_notifications, sms_notifications, marketing_emails } = req.body;
+  
+  try {
+    const updatedUser = await userService.updateNotificationPreferences(req.user.id, {
+      email_notifications,
+      sms_notifications,
+      marketing_emails
+    });
+    return success(res, updatedUser);
+  } catch (err: any) {
+    return error(res, err.message || 'Failed to update notifications', 400);
+  }
+}));
+
 // POST /api/users/change-password - Change user password
 router.post('/change-password', authenticate, safeAsync(async (req: any, res: any) => {
   try {

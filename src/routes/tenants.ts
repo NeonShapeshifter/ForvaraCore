@@ -72,4 +72,76 @@ router.get('/:id/members', safeAsync(async (req: any, res: any) => {
   }
 }));
 
+// POST /api/tenants/:id/invite - Invite user to company
+router.post('/:id/invite', safeAsync(async (req: any, res: any) => {
+  const { email, phone, role = 'member' } = req.body;
+  
+  try {
+    const invitation = await tenantService.inviteUser({
+      companyId: req.params.id,
+      invitedBy: req.user.id,
+      email,
+      phone,
+      role
+    });
+    return success(res, invitation, 201);
+  } catch (err: any) {
+    return error(res, err.message, 400);
+  }
+}));
+
+// PATCH /api/tenants/:id/members/:memberId/role - Change member role
+router.patch('/:id/members/:memberId/role', safeAsync(async (req: any, res: any) => {
+  const { role } = req.body;
+  
+  try {
+    const member = await tenantService.changeMemberRole(
+      req.params.id,
+      req.params.memberId,
+      req.user.id,
+      role
+    );
+    return success(res, member);
+  } catch (err: any) {
+    return error(res, err.message, 400);
+  }
+}));
+
+// DELETE /api/tenants/:id/members/:memberId - Remove member
+router.delete('/:id/members/:memberId', safeAsync(async (req: any, res: any) => {
+  try {
+    await tenantService.removeMember(
+      req.params.id,
+      req.params.memberId,
+      req.user.id
+    );
+    return success(res, { message: 'Member removed successfully' });
+  } catch (err: any) {
+    return error(res, err.message, 400);
+  }
+}));
+
+// GET /api/tenants/:id/invitations - Get pending invitations
+router.get('/:id/invitations', safeAsync(async (req: any, res: any) => {
+  try {
+    const invitations = await tenantService.getPendingInvitations(req.params.id, req.user.id);
+    return success(res, invitations);
+  } catch (err: any) {
+    return error(res, err.message, 400);
+  }
+}));
+
+// POST /api/tenants/:id/invitations/:inviteId/accept - Accept invitation
+router.post('/:id/invitations/:inviteId/accept', safeAsync(async (req: any, res: any) => {
+  try {
+    const membership = await tenantService.acceptInvitation(
+      req.params.inviteId,
+      req.user.id
+    );
+    return success(res, membership);
+  } catch (err: any) {
+    return error(res, err.message, 400);
+  }
+}));
+
 export { router as tenantRoutes };

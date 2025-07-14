@@ -63,6 +63,12 @@ coverage/
 CLAUDE.md
 DEPLOYMENT.md
 INTEGRATION_ROADMAP.md
+SECURITY.md
+TEAM-MANAGEMENT.md
+ADMIN-PANEL.md
+STRIPE-INTEGRATION.md
+PHONE-INPUT.md
+docs/
 sql/
 *.sql
 
@@ -70,6 +76,8 @@ sql/
 deploy.sh
 start.sh
 docker-compose.prod.yml
+scripts/
+seed-apps.sql
 
 # Archivos de test temporales
 test-*.js

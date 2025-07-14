@@ -1,21 +1,21 @@
 import { Response, NextFunction } from 'express';
-import { AuthRequest } from '@/types';
-import { unauthorized } from '@/utils/responses';
-import { verifyToken, extractTokenFromHeader } from '@/utils/jwt';
-import { supabase } from '@/config/database';
-import { safeSupabaseQuery } from '@/utils/safeAsync';
+import { AuthRequest } from '../types/index.js';
+import { errorResponse } from '../utils/responses.js';
+import { verifyToken, extractTokenFromHeader } from '../utils/jwt.js';
+import { supabase } from '../config/database.js';
+import { safeSupabaseQuery } from '../utils/safeAsync.js';
 
 export const authenticate = async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const token = extractTokenFromHeader(req.headers.authorization);
     
     if (!token) {
-      return unauthorized(res, 'Token required');
+      return res.status(401).json(errorResponse('Token required'));
     }
 
     const payload = verifyToken(token);
     if (!payload) {
-      return unauthorized(res, 'Invalid token');
+      return res.status(401).json(errorResponse('Invalid token'));
     }
 
     // Verificar que el usuario existe en Supabase (con fallback seguro)
@@ -25,7 +25,7 @@ export const authenticate = async (req: AuthRequest, res: Response, next: NextFu
     );
 
     if (!user) {
-      return unauthorized(res, 'User not found');
+      return res.status(401).json(errorResponse('User not found'));
     }
 
     // Adjuntar user al request
@@ -34,7 +34,7 @@ export const authenticate = async (req: AuthRequest, res: Response, next: NextFu
     next();
   } catch (error) {
     console.error('❌ Auth middleware error:', error);
-    return unauthorized(res, 'Authentication failed');
+    return res.status(401).json(errorResponse('Authentication failed'));
   }
 };
 
@@ -65,5 +65,49 @@ export const optionalAuth = async (req: AuthRequest, res: Response, next: NextFu
   } catch (error) {
     // Error silencioso, continúa sin auth
     next();
+  }
+};
+
+// Admin authentication middleware
+export const requireAdmin = async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    // First authenticate the user
+    const token = extractTokenFromHeader(req.headers.authorization);
+    
+    if (!token) {
+      return res.status(401).json(errorResponse('Token required'));
+    }
+
+    const payload = verifyToken(token);
+    if (!payload) {
+      return res.status(401).json(errorResponse('Invalid token'));
+    }
+
+    // Get user
+    const { data: user } = await safeSupabaseQuery(
+      supabase.from('users').select('*').eq('id', payload.userId).single(),
+      { data: null, error: null }
+    );
+
+    if (!user) {
+      return res.status(401).json(errorResponse('User not found'));
+    }
+
+    // Check if user is admin (define admin by email or add admin flag to users table)
+    const adminEmails = [
+      'ale@forvara.com',
+      'admin@forvara.com',
+      // Add your admin emails here
+    ];
+
+    if (!adminEmails.includes(user.email)) {
+      return res.status(403).json(errorResponse('Admin access required'));
+    }
+
+    req.user = user;
+    next();
+  } catch (error) {
+    console.error('❌ Admin auth error:', error);
+    return res.status(500).json(errorResponse('Authentication failed'));
   }
 };

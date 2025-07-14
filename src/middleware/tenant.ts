@@ -1,24 +1,24 @@
 import { Response, NextFunction } from 'express';
-import { AuthRequest } from '@/types';
-import { forbidden } from '@/utils/responses';
-import { supabase } from '@/config/database';
-import { safeSupabaseQuery } from '@/utils/safeAsync';
+import { AuthRequest } from '../types/index.js';
+import { errorResponse } from '../utils/responses.js';
+import { supabase } from '../config/database.js';
+import { safeSupabaseQuery } from '../utils/safeAsync.js';
 
 export const requireTenant = async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     if (!req.user) {
-      return forbidden(res, 'Authentication required');
+      return res.status(403).json(errorResponse('Authentication required'));
     }
 
     const tenantId = req.headers['x-tenant-id'] as string;
     
     if (!tenantId) {
-      return forbidden(res, 'Tenant ID required');
+      return res.status(403).json(errorResponse('Tenant ID required'));
     }
 
     // Verificar que el usuario pertenece al tenant (con fallback seguro)
     const { data: membership } = await safeSupabaseQuery(
-      () => supabase
+      supabase
         .from('company_members')
         .select('*, companies(*)')
         .eq('user_id', req.user!.id)
@@ -29,16 +29,17 @@ export const requireTenant = async (req: AuthRequest, res: Response, next: NextF
     );
 
     if (!membership) {
-      return forbidden(res, 'Access denied to this company');
+      return res.status(403).json(errorResponse('Access denied to this company'));
     }
 
-    // Adjuntar company al request
+    // Adjuntar company al request y company_id al user
     req.company = (membership as any).companies;
+    req.user!.company_id = tenantId;
     
     next();
   } catch (error) {
     console.error('❌ Tenant middleware error:', error);
-    return forbidden(res, 'Tenant verification failed');
+    return res.status(403).json(errorResponse('Tenant verification failed'));
   }
 };
 
@@ -56,7 +57,7 @@ export const optionalTenant = async (req: AuthRequest, res: Response, next: Next
 
     // Intentar cargar tenant (silenciosamente)
     const { data: membership } = await safeSupabaseQuery(
-      () => supabase
+      supabase
         .from('company_members')
         .select('*, companies(*)')
         .eq('user_id', req.user!.id)

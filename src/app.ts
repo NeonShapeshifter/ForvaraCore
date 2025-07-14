@@ -2,20 +2,55 @@ import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import compression from 'compression';
-import { authRoutes } from './routes/auth';
-import { healthRoutes } from './routes/health';
-import { tenantRoutes } from './routes/tenants';
-import { appRoutes } from './routes/apps';
-import { userRoutes } from './routes/users';
-import { hubRoutes } from './routes/hub';
+import { authRoutes } from './routes/auth.js';
+import { healthRoutes } from './routes/health.js';
+import { tenantRoutes } from './routes/tenants.js';
+import { appRoutes } from './routes/apps.js';
+import { userRoutes } from './routes/users.js';
+import { hubRoutes } from './routes/hub.js';
+import { billingRoutes } from './routes/billing.js';
+import { analyticsRoutes } from './routes/analytics.js';
+import { adminRoutes } from './routes/admin.js';
+import { passwordResetRoutes } from './routes/password-reset.js';
+import { securityRoutes } from './routes/security.js';
+import { generalRateLimit } from './utils/security.js';
 
 const app = express();
 
 // Security middleware
-app.use(helmet());
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      styleSrc: ["'self'", "'unsafe-inline'", "https:"],
+      scriptSrc: ["'self'"],
+      imgSrc: ["'self'", "data:", "https:"],
+      connectSrc: ["'self'", "https:"],
+    },
+  },
+  hsts: {
+    maxAge: 31536000,
+    includeSubDomains: true,
+    preload: true
+  }
+}));
+
+// HTTPS enforcement in production
+if (process.env.NODE_ENV === 'production') {
+  app.use((req, res, next) => {
+    if (req.header('x-forwarded-proto') !== 'https') {
+      res.redirect(`https://${req.header('host')}${req.url}`);
+    } else {
+      next();
+    }
+  });
+}
+
+// Rate limiting (apply to all requests)
+app.use(generalRateLimit);
 
 // CORS configuration
-const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(',') || ['http://localhost:5173'];
+const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(',') || ['http://localhost:5173', 'http://localhost:5174'];
 app.use(cors({
   origin: allowedOrigins,
   credentials: true
@@ -35,6 +70,11 @@ app.use('/api/users', userRoutes);
 app.use('/api/tenants', tenantRoutes);
 app.use('/api/apps', appRoutes);
 app.use('/api/hub', hubRoutes);
+app.use('/api/billing', billingRoutes);
+app.use('/api/analytics', analyticsRoutes);
+app.use('/api/admin', adminRoutes);
+app.use('/api/password-reset', passwordResetRoutes);
+app.use('/api/security', securityRoutes);
 
 // Root health check
 app.get('/', (req, res) => {

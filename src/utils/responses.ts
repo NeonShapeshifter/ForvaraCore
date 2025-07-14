@@ -1,5 +1,5 @@
 import { Response } from 'express';
-import { ApiResponse } from '@/types';
+import { ApiResponse } from '../types/index.js';
 
 export const success = <T>(res: Response, data: T, status = 200): Response => {
   const response: ApiResponse<T> = { data };
@@ -31,4 +31,15 @@ export const conflict = (res: Response, message: string): Response => {
 
 export const serverError = (res: Response, message = 'Internal server error'): Response => {
   return error(res, message, 500, 'SERVER_ERROR');
+};
+
+// Helper functions for direct JSON responses (without Response object)
+export const successResponse = <T>(data: T): ApiResponse<T> => {
+  return { data };
+};
+
+export const errorResponse = (message: string, code?: string): ApiResponse => {
+  return {
+    error: { message, code }
+  };
 };

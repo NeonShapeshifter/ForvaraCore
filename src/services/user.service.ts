@@ -7,6 +7,7 @@ export class UserService {
     name?: string;
     full_name?: string;
     phone?: string;
+    email?: string;
     avatar_url?: string;
   }) {
     try {
@@ -19,6 +20,10 @@ export class UserService {
       
       if (data.phone !== undefined) {
         updateData.phone = data.phone?.trim() || null;
+      }
+
+      if (data.email !== undefined) {
+        updateData.email = data.email?.trim() || null;
       }
       
       if (data.avatar_url !== undefined) {
@@ -150,6 +155,50 @@ export class UserService {
     } catch (error: any) {
       console.error('❌ Get user profile error:', error);
       throw new Error(error.message || 'Failed to get user profile');
+    }
+  }
+
+  async updateNotificationPreferences(userId: string, data: {
+    email_notifications?: boolean;
+    sms_notifications?: boolean;
+    marketing_emails?: boolean;
+  }) {
+    try {
+      const updateData: any = {};
+      
+      if (data.email_notifications !== undefined) {
+        updateData.email_notifications = data.email_notifications;
+      }
+      
+      if (data.sms_notifications !== undefined) {
+        updateData.sms_notifications = data.sms_notifications;
+      }
+      
+      if (data.marketing_emails !== undefined) {
+        updateData.marketing_emails = data.marketing_emails;
+      }
+
+      if (Object.keys(updateData).length === 0) {
+        throw new Error('No notification preferences to update');
+      }
+
+      updateData.updated_at = new Date().toISOString();
+
+      const { data: user, error } = await supabase
+        .from('users')
+        .update(updateData)
+        .eq('id', userId)
+        .select('email_notifications, sms_notifications, marketing_emails')
+        .single();
+
+      if (error) {
+        throw new Error(`Notification update failed: ${error.message}`);
+      }
+
+      return user;
+    } catch (error: any) {
+      console.error('❌ Update notification preferences error:', error);
+      throw new Error(error.message || 'Failed to update notification preferences');
     }
   }
 }
