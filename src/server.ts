@@ -1,16 +1,16 @@
-// Load environment variables FIRST
 import dotenv from 'dotenv';
 dotenv.config();
 
 import app from './app';
 
-const PORT = process.env.PORT || 4000;
+const PORT = parseInt(process.env.PORT || '4000', 10);  // ← Parse to number!
+const HOST = '0.0.0.0';
 
 // Start server
-const server = app.listen(PORT, () => {
-  console.log(`🚀 ForvaraCore server running on port ${PORT}`);
-  console.log(`📡 API available at http://localhost:${PORT}/api`);
-  console.log(`🏥 Health check at http://localhost:${PORT}/api/health`);
+const server = app.listen(PORT, HOST, () => {
+  console.log(`🚀 ForvaraCore server running on ${HOST}:${PORT}`);
+  console.log(`📡 API available at http://${HOST}:${PORT}/api`);
+  console.log(`🏥 Health check at http://${HOST}:${PORT}/api/health`);
 });
 
 // Graceful shutdown
