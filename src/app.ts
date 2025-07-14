@@ -91,8 +91,26 @@ app.get('/', (req, res) => {
 
 // Additional health check at root /health for extra compatibility
 app.get('/health', (req, res) => {
+  console.log('🩺 Root health check requested');
   res.status(200).json({
     status: 'ok',
+    service: 'ForvaraCore',
+    timestamp: new Date().toISOString(),
+    uptime: Math.round(process.uptime())
+  });
+});
+
+// Simple ping endpoint for Railway
+app.get('/ping', (req, res) => {
+  console.log('🏓 Ping requested');
+  res.status(200).send('pong');
+});
+
+// Railway-specific healthcheck (alternative path)
+app.get('/healthz', (req, res) => {
+  console.log('🔍 Healthz endpoint requested (Kubernetes style)');
+  res.status(200).json({
+    status: 'healthy',
     timestamp: new Date().toISOString()
   });
 });
