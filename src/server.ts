@@ -1,4 +1,5 @@
 import dotenv from 'dotenv';
+import { Server } from 'http';
 dotenv.config();
 
 import app from './app';
@@ -19,9 +20,12 @@ console.log(`🔑 Environment variables loaded:`, {
   ALLOWED_ORIGINS: process.env.ALLOWED_ORIGINS
 });
 
+// Declare server variable outside try block for proper scope
+let server: Server;
+
 // Start server with error handling
 try {
-  const server = app.listen(PORT, HOST, () => {
+  server = app.listen(PORT, HOST, () => {
     console.log(`✅ ForvaraCore server successfully started!`);
     console.log(`🚀 Server running on ${HOST}:${PORT}`);
     console.log(`📡 API available at http://${HOST}:${PORT}/api`);
@@ -53,7 +57,7 @@ process.on('SIGTERM', () => {
 });
 
 process.on('SIGINT', () => {
-  console.log('SIGINT received, shutting down gracefully');
+  console.log('SIGINT received, shutting down gracefully');  
   server.close(() => {
     console.log('Process terminated');
   });
