@@ -81,6 +81,8 @@ seed-apps.sql
 
 # Archivos de test temporales
 test-*.js
+test-health.js
+deployment-fix.md
 
 # Mantener solo README público
 # README.md se mantiene para GitHub

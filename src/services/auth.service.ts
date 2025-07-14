@@ -839,7 +839,7 @@ export class AuthService {
 
   private generateJWT(payload: Partial<JWTPayload>): string {
     return jwt.sign(
-      payload as object,
+      payload,
       process.env.JWT_SECRET!,
       { expiresIn: process.env.JWT_EXPIRES_IN || '7d' }
     );
@@ -969,137 +969,8 @@ export class AuthService {
   }
 
   // =====================================================
-  // PASSWORD RESET FLOW
+  // PASSWORD CHANGE
   // =====================================================
-
-  async requestPasswordReset(data: { email?: string; phone?: string }) {
-    try {
-      const { email, phone } = data;
-
-      // Find user by email or phone
-      let user = null;
-      if (email) {
-        const { data: userData } = await safeSupabaseQuery(
-          supabase
-            .from('users')
-            .select('id, email, name')
-            .eq('email', email)
-            .single(),
-          { data: null, error: null }
-        );
-        user = userData;
-      } else if (phone) {
-        const { data: userData } = await safeSupabaseQuery(
-          supabase
-            .from('users')
-            .select('id, email, name')
-            .eq('phone', phone)
-            .single(),
-          { data: null, error: null }
-        );
-        user = userData;
-      }
-
-      if (!user) {
-        // Don't reveal if user exists for security
-        console.log('❌ Password reset requested for non-existent user:', { email, phone });
-        return;
-      }
-
-      // Generate reset token
-      const resetToken = crypto.randomBytes(32).toString('hex');
-      const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
-
-      // Store reset token
-      const { error } = await supabase
-        .from('password_reset_tokens')
-        .insert({
-          user_id: (user as any).id,
-          token: resetToken,
-          expires_at: expiresAt.toISOString(),
-          used: false
-        });
-
-      if (error) {
-        console.error('❌ Failed to store reset token:', error);
-        return;
-      }
-
-      // Send reset email if user has email
-      if ((user as any).email) {
-        const resetLink = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/reset-password?token=${resetToken}`;
-        
-        await this.emailService.sendPasswordResetEmail((user as any).email, resetLink);
-        console.log('✅ Password reset email sent to:', (user as any).email);
-      }
-
-      return true;
-    } catch (error: any) {
-      console.error('❌ Password reset request error:', error);
-      // Don't throw to prevent revealing user information
-      return false;
-    }
-  }
-
-  async resetPassword(token: string, newPassword: string) {
-    try {
-      // Find and validate reset token
-      const { data: resetData } = await safeSupabaseQuery(
-        supabase
-          .from('password_reset_tokens')
-          .select('user_id, expires_at, used')
-          .eq('token', token)
-          .single(),
-          { data: null, error: null }
-      );
-
-      if (!resetData) {
-        throw new Error('Invalid or expired reset token');
-      }
-
-      if ((resetData as any).used) {
-        throw new Error('Reset token has already been used');
-      }
-
-      if (new Date((resetData as any).expires_at) < new Date()) {
-        throw new Error('Reset token has expired');
-      }
-
-      // Hash new password
-      const passwordHash = await bcrypt.hash(newPassword, 12);
-
-      // Update user password
-      const { error: updateError } = await supabase
-        .from('users')
-        .update({
-          password_hash: passwordHash,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', (resetData as any).user_id);
-
-      if (updateError) {
-        throw new Error('Failed to update password');
-      }
-
-      // Mark token as used
-      await supabase
-        .from('password_reset_tokens')
-        .update({ used: true })
-        .eq('token', token);
-
-      // Invalidate all sessions for security
-      await supabase
-        .from('user_sessions')
-        .update({ is_active: false })
-        .eq('user_id', (resetData as any).user_id);
-
-      console.log('✅ Password reset successful for user:', (resetData as any).user_id);
-      return true;
-    } catch (error: any) {
-      console.error('❌ Password reset error:', error);
-      throw new Error(error.message || 'Failed to reset password');
-    }
-  }
 
   async changePassword(userId: string, data: { current_password: string; new_password: string }) {
     try {
