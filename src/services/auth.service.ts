@@ -4,6 +4,7 @@ import crypto from 'crypto';
 import { supabase } from '@/config/database';
 import { safeSupabaseQuery } from '@/utils/safeAsync';
 import { EmailService } from './email.service.js';
+import { validatePhoneNumber, normalizePhoneNumber } from '../utils/phoneValidation.js';
 import { 
   User, 
   Company, 
@@ -27,11 +28,21 @@ export class AuthService {
       const { email, phone, password } = loginData;
 
       if (!password) {
-        throw new Error('Password is required');
+        throw new Error('La contraseña es obligatoria');
       }
 
       if (!email && !phone) {
-        throw new Error('Email or phone is required');
+        throw new Error('Email o teléfono es obligatorio');
+      }
+
+      // Validar y normalizar teléfono si se proporciona
+      let normalizedPhone: string | null = null;
+      if (phone) {
+        const phoneValidation = validatePhoneNumber(phone);
+        if (!phoneValidation.isValid) {
+          throw new Error(phoneValidation.error || 'Formato de teléfono inválido');
+        }
+        normalizedPhone = phoneValidation.e164Format || null;
       }
 
       // Buscar usuario por email o teléfono
@@ -42,8 +53,8 @@ export class AuthService {
       // Ajustar query según el tipo de login
       if (email) {
         query = query.eq('email', email.toLowerCase());
-      } else if (phone) {
-        query = query.eq('phone', phone.trim());
+      } else if (normalizedPhone) {
+        query = query.eq('phone', normalizedPhone);
       }
 
       const { data: user } = await safeSupabaseQuery(
@@ -52,30 +63,30 @@ export class AuthService {
       );
 
       if (!user) {
-        throw new Error('Invalid credentials');
+        throw new Error('Credenciales inválidas');
       }
 
       // Verificar que el método de auth sea compatible
       const authMethod = user.auth_method;
       if (email && authMethod === 'phone') {
-        throw new Error('This account only supports phone login');
+        throw new Error('Esta cuenta solo soporta acceso por teléfono');
       }
       if (phone && authMethod === 'email') {
-        throw new Error('This account only supports email login');
+        throw new Error('Esta cuenta solo soporta acceso por email');
       }
 
       // Verificar password
       const isValid = await bcrypt.compare(password, user.password_hash);
       if (!isValid) {
-        throw new Error('Invalid credentials');
+        throw new Error('Credenciales inválidas');
       }
 
       // Verificar verificación de email/phone
       if (email && !user.email_verified) {
-        throw new Error('Please verify your email first');
+        throw new Error('Por favor verifica tu email primero');
       }
       if (phone && !user.phone_verified) {
-        throw new Error('Please verify your phone first');
+        throw new Error('Por favor verifica tu teléfono primero');
       }
 
       // Obtener companies del usuario
@@ -135,15 +146,30 @@ export class AuthService {
 
       // Validaciones básicas
       if (!first_name || !last_name) {
-        throw new Error('First name and last name are required');
+        throw new Error('Nombre y apellido son obligatorios');
       }
 
       if (!email && !phone) {
-        throw new Error('Email or phone is required');
+        throw new Error('Email o teléfono es obligatorio');
       }
 
       if (!password || password.length < 8) {
-        throw new Error('Password must be at least 8 characters');
+        throw new Error('La contraseña debe tener al menos 8 caracteres');
+      }
+
+      // Validar formato de email si se proporciona
+      if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        throw new Error('Formato de email inválido');
+      }
+
+      // Validar teléfono si se proporciona
+      let normalizedPhone: string | null = null;
+      if (phone) {
+        const phoneValidation = validatePhoneNumber(phone);
+        if (!phoneValidation.isValid) {
+          throw new Error(phoneValidation.error || 'Formato de teléfono inválido');
+        }
+        normalizedPhone = phoneValidation.e164Format || null;
       }
 
       // Determinar método de auth
@@ -167,18 +193,18 @@ export class AuthService {
         }
       }
 
-      if (phone) {
+      if (normalizedPhone) {
         const { data: existingPhone } = await safeSupabaseQuery(
           supabase
             .from('users')
             .select('id')
-            .eq('phone', phone.trim())
+            .eq('phone', normalizedPhone)
             .single(),
           { data: null, error: null }
         );
 
         if (existingPhone) {
-          throw new Error('Phone already registered');
+          throw new Error('Este número de teléfono ya está registrado');
         }
       }
 
@@ -192,7 +218,7 @@ export class AuthService {
           first_name: first_name.trim(),
           last_name: last_name.trim(),
           email: email?.toLowerCase() || null,
-          phone: phone?.trim() || null,
+          phone: normalizedPhone,
           cedula_panama: cedula_panama?.trim() || null,
           password_hash: passwordHash,
           auth_method,
