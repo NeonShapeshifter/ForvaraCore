@@ -36,13 +36,14 @@ app.use(helmet({
 }));
 
 // HTTPS enforcement in production
-if (process.env.NODE_ENV === 'production') {
+const isRailway = Boolean(process.env.RAILWAY_ENVIRONMENT);
+
+if (process.env.NODE_ENV === 'production' && !isRailway) {
   app.use((req, res, next) => {
     if (req.header('x-forwarded-proto') !== 'https') {
-      res.redirect(`https://${req.header('host')}${req.url}`);
-    } else {
-      next();
+      return res.redirect(`https://${req.header('host')}${req.url}`);
     }
+    next();
   });
 }
 
