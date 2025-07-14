@@ -36,8 +36,8 @@ export const supabase = createClient(supabaseUrl, supabaseServiceKey, {
   }
 });
 
-// Test connection on initialization
-(async () => {
+// Lazy connection test - don't block server startup
+export async function testDatabaseConnection() {
   try {
     const { data, error } = await supabase
       .from('users')
@@ -46,12 +46,15 @@ export const supabase = createClient(supabaseUrl, supabaseServiceKey, {
     
     if (error) {
       console.error('❌ Database connection test failed:', error.message);
+      return false;
     } else {
       console.log('✅ Database connection test successful');
+      return true;
     }
   } catch (err) {
     console.error('❌ Database connection error:', err);
+    return false;
   }
-})();
+}
 
 export default supabase;

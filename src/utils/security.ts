@@ -76,4 +76,8 @@ export const generalRateLimit = rateLimit({
       code: 'RATE_LIMITED'
     }
   },
+  skip: (req) => {
+    // Skip rate limiting for health checks
+    return req.path === '/api/health' || req.path === '/api/health/deep';
+  }
 });

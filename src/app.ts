@@ -83,8 +83,17 @@ app.get('/', (req, res) => {
       status: 'healthy',
       service: 'ForvaraCore',
       version: '3.0.0',
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
+      health_endpoint: '/api/health'
     }
+  });
+});
+
+// Additional health check at root /health for extra compatibility
+app.get('/health', (req, res) => {
+  res.status(200).json({
+    status: 'ok',
+    timestamp: new Date().toISOString()
   });
 });
 
