@@ -51,11 +51,53 @@ if (process.env.NODE_ENV === 'production' && !isRailway) {
 app.use(generalRateLimit);
 
 // CORS configuration
-const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(',') || ['http://localhost:5173', 'http://localhost:5174'];
+const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(',') || [
+  'http://localhost:5173', 
+  'http://localhost:5174',
+  'https://app.forvara.dev',
+  'https://admin.forvara.dev', 
+  'https://forvara.dev',
+  'https://www.forvara.dev'
+];
+
+// Add Railway public domain if available
+if (process.env.RAILWAY_PUBLIC_DOMAIN) {
+  allowedOrigins.push(`https://${process.env.RAILWAY_PUBLIC_DOMAIN}`);
+}
+
+console.log('🌐 CORS allowed origins:', allowedOrigins);
+
 app.use(cors({
-  origin: allowedOrigins,
-  credentials: true
+  origin: function (origin, callback) {
+    console.log(`🌐 CORS request from origin: ${origin || 'null'}`);
+    
+    // Allow requests with no origin (like mobile apps or curl requests)
+    if (!origin) {
+      console.log('✅ CORS: Allowing request with no origin');
+      return callback(null, true);
+    }
+    
+    // Check if the origin is in our allowed list
+    if (allowedOrigins.indexOf(origin) !== -1) {
+      console.log(`✅ CORS: Allowing origin ${origin}`);
+      callback(null, true);
+    } else {
+      console.warn(`❌ CORS blocked origin: ${origin}`);
+      console.log(`📋 Allowed origins: ${allowedOrigins.join(', ')}`);
+      callback(new Error(`Not allowed by CORS. Origin: ${origin}`));
+    }
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-Tenant-ID'],
+  optionsSuccessStatus: 200 // Some legacy browsers choke on 204
 }));
+
+// Additional preflight handler for debugging
+app.options('*', (req, res) => {
+  console.log(`🔍 PREFLIGHT request to ${req.path} from ${req.get('Origin')}`);
+  res.sendStatus(200);
+});
 
 // Body parsing middleware
 app.use(express.json({ limit: '10mb' }));
