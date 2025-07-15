@@ -48,13 +48,42 @@ router.get('/:id', safeAsync(async (req: any, res: any) => {
 
 // PATCH /api/tenants/:id - Update company
 router.patch('/:id', safeAsync(async (req: any, res: any) => {
-  const { name, description, logo_url } = req.body;
+  const { 
+    razon_social,
+    ruc,
+    phone,
+    contact_email,
+    address,
+    industry_type,
+    company_size,
+    billing_email,
+    billing_address,
+    logo_url,
+    description,
+    // Legacy support
+    name 
+  } = req.body;
   
   try {
+    const updateData: any = {};
+    
+    // Map fields that exist in request
+    if (razon_social || name) updateData.razon_social = razon_social || name;
+    if (ruc) updateData.ruc = ruc;
+    if (phone) updateData.phone = phone;
+    if (contact_email) updateData.contact_email = contact_email;
+    if (address) updateData.address = address;
+    if (industry_type) updateData.industry_type = industry_type;
+    if (company_size) updateData.company_size = company_size;
+    if (billing_email) updateData.billing_email = billing_email;
+    if (billing_address) updateData.billing_address = billing_address;
+    if (logo_url) updateData.logo_url = logo_url;
+    if (description) updateData.description = description;
+    
     const company = await tenantService.updateCompany(
       req.params.id, 
       req.user.id, 
-      { name, description, logo_url }
+      updateData
     );
     return success(res, company);
   } catch (err: any) {

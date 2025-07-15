@@ -223,6 +223,41 @@ router.get('/me', authenticate, safeAsync(async (req: any, res: any) => {
 }));
 
 // =====================================================
+// UPDATE USER PROFILE
+// =====================================================
+
+router.patch('/me', authenticate, safeAsync(async (req: any, res: any) => {
+  try {
+    const updateData = {
+      first_name: req.body.first_name,
+      last_name: req.body.last_name,
+      email: req.body.email,
+      phone: req.body.phone,
+      cedula_panama: req.body.cedula_panama,
+      avatar_url: req.body.avatar_url,
+      preferred_language: req.body.preferred_language,
+      timezone: req.body.timezone
+    };
+
+    // Remove undefined values
+    Object.keys(updateData).forEach(key => {
+      if (updateData[key] === undefined) {
+        delete updateData[key];
+      }
+    });
+
+    // Sanitize inputs
+    if (updateData.first_name) updateData.first_name = sanitizeName(updateData.first_name);
+    if (updateData.last_name) updateData.last_name = sanitizeName(updateData.last_name);
+
+    const updatedUser = await authService.updateUserProfile(req.user.id, updateData);
+    return success(res, updatedUser);
+  } catch (err: any) {
+    return error(res, err.message, 400);
+  }
+}));
+
+// =====================================================
 // LOGOUT
 // =====================================================
 

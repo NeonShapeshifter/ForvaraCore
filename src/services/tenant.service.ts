@@ -143,8 +143,17 @@ export class TenantService {
 
   async updateCompany(companyId: string, userId: string, data: {
     name?: string;
+    razon_social?: string;
+    ruc?: string;
     description?: string;
     logo_url?: string;
+    phone?: string;
+    contact_email?: string;
+    address?: string;
+    industry_type?: string;
+    company_size?: string;
+    billing_email?: string;
+    billing_address?: string;
   }) {
     try {
       // Verificar permisos (admin o owner)
@@ -165,8 +174,16 @@ export class TenantService {
 
       const updateData: any = {};
       
+      // Handle legacy name field or new razon_social field
       if (data.name && data.name.trim()) {
-        updateData.name = data.name.trim();
+        updateData.razon_social = data.name.trim();
+      }
+      if (data.razon_social && data.razon_social.trim()) {
+        updateData.razon_social = data.razon_social.trim();
+      }
+      
+      if (data.ruc !== undefined) {
+        updateData.ruc = data.ruc?.trim() || null;
       }
       
       if (data.description !== undefined) {
@@ -175,6 +192,34 @@ export class TenantService {
       
       if (data.logo_url !== undefined) {
         updateData.logo_url = data.logo_url?.trim() || null;
+      }
+      
+      if (data.phone !== undefined) {
+        updateData.phone = data.phone?.trim() || null;
+      }
+      
+      if (data.contact_email !== undefined) {
+        updateData.contact_email = data.contact_email?.trim() || null;
+      }
+      
+      if (data.address !== undefined) {
+        updateData.address = data.address?.trim() || null;
+      }
+      
+      if (data.industry_type !== undefined) {
+        updateData.industry_type = data.industry_type?.trim() || null;
+      }
+      
+      if (data.company_size !== undefined) {
+        updateData.company_size = data.company_size?.trim() || null;
+      }
+      
+      if (data.billing_email !== undefined) {
+        updateData.billing_email = data.billing_email?.trim() || null;
+      }
+      
+      if (data.billing_address !== undefined) {
+        updateData.billing_address = data.billing_address?.trim() || null;
       }
 
       if (Object.keys(updateData).length === 0) {

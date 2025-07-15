@@ -1053,4 +1053,63 @@ export class AuthService {
       throw new Error(error.message || 'Failed to change password');
     }
   }
+
+  // =====================================================
+  // UPDATE USER PROFILE
+  // =====================================================
+  
+  async updateUserProfile(userId: string, updateData: Partial<User>): Promise<User> {
+    try {
+      // Validate unique fields if changing email or phone
+      if (updateData.email) {
+        const { data: existingEmail } = await supabase
+          .from('users')
+          .select('id')
+          .eq('email', updateData.email)
+          .neq('id', userId)
+          .single();
+          
+        if (existingEmail) {
+          throw new Error('Este email ya está registrado');
+        }
+      }
+      
+      if (updateData.phone) {
+        const phoneValidation = validatePhoneNumber(updateData.phone);
+        if (!phoneValidation.isValid) {
+          throw new Error(phoneValidation.error || 'Formato de teléfono inválido');
+        }
+        updateData.phone = phoneValidation.e164Format || updateData.phone;
+        
+        const { data: existingPhone } = await supabase
+          .from('users')
+          .select('id')
+          .eq('phone', updateData.phone)
+          .neq('id', userId)
+          .single();
+          
+        if (existingPhone) {
+          throw new Error('Este teléfono ya está registrado');
+        }
+      }
+      
+      // Update user
+      const { data: updatedUser, error: updateError } = await supabase
+        .from('users')
+        .update({
+          ...updateData,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', userId)
+        .select()
+        .single();
+        
+      if (updateError) throw updateError;
+      
+      return updatedUser;
+    } catch (error: any) {
+      console.error('❌ Update user profile error:', error);
+      throw new Error(error.message || 'Failed to update profile');
+    }
+  }
 }
