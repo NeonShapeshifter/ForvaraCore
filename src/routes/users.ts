@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { success, error } from '@/utils/responses';
 import { safeAsync } from '@/utils/safeAsync';
 import { authenticate } from '@/middleware/auth';
+import { requireTenant } from '@/middleware/tenant';
 import { UserService } from '@/services/user.service';
 
 const router = Router();
@@ -78,6 +79,16 @@ router.post('/change-password', authenticate, safeAsync(async (req: any, res: an
   try {
     await userService.changePassword(req.user.id, req.body);
     return success(res, { message: 'Password changed successfully' });
+  } catch (err: any) {
+    return error(res, err.message, 400);
+  }
+}));
+
+// GET /api/users/company-members - Get company members for delegation
+router.get('/company-members', authenticate, requireTenant, safeAsync(async (req: any, res: any) => {
+  try {
+    const members = await userService.getCompanyMembers(req.company.id);
+    return success(res, members);
   } catch (err: any) {
     return error(res, err.message, 400);
   }

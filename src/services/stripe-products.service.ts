@@ -1,3 +1,4 @@
+import Stripe from 'stripe'
 import stripe, { STRIPE_CONFIG } from '../config/stripe.js'
 import { supabase } from '../config/database.js'
 

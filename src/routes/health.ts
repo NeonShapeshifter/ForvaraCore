@@ -1,7 +1,6 @@
 import { Router } from 'express';
 import { success } from '../utils/responses.js';
-import { supabase } from '../config/database.js';
-import testDatabaseConnection from '../config/database.js';
+import { supabase, testDatabaseConnection } from '../config/database.js';
 
 const router = Router();
 

@@ -52,7 +52,9 @@ export const optionalTenant = async (req: AuthRequest, res: Response, next: Next
     const tenantId = req.headers['x-tenant-id'] as string;
     
     if (!tenantId) {
-      return next(); // No tenant ID, continue
+      // No tenant ID - this is fine for individual mode
+      req.user!.company_id = null;
+      return next();
     }
 
     // Intentar cargar tenant (silenciosamente)
@@ -69,11 +71,60 @@ export const optionalTenant = async (req: AuthRequest, res: Response, next: Next
 
     if (membership) {
       req.company = (membership as any).companies;
+      req.user!.company_id = tenantId;
+    } else {
+      // User doesn't belong to this company
+      req.user!.company_id = null;
     }
     
     next();
   } catch (error) {
     // Error silencioso, continúa sin tenant
+    req.user!.company_id = null;
     next();
+  }
+};
+
+// New middleware: Support both individual and company modes
+export const individualOrCompanyMode = async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    if (!req.user) {
+      return res.status(403).json(errorResponse('Authentication required'));
+    }
+
+    const tenantId = req.headers['x-tenant-id'] as string;
+    
+    // Individual mode - no tenant required
+    if (!tenantId) {
+      req.user!.company_id = null;
+      req.user!.is_individual_mode = true;
+      return next();
+    }
+
+    // Company mode - verify membership
+    const { data: membership } = await safeSupabaseQuery(
+      supabase
+        .from('company_members')
+        .select('*, companies(*)')
+        .eq('user_id', req.user!.id)
+        .eq('company_id', tenantId)
+        .eq('status', 'active')
+        .single(),
+      { data: null, error: null }
+    );
+
+    if (!membership) {
+      return res.status(403).json(errorResponse('Access denied to this company'));
+    }
+
+    // Set company context
+    req.company = (membership as any).companies;
+    req.user!.company_id = tenantId;
+    req.user!.is_individual_mode = false;
+    
+    next();
+  } catch (error) {
+    console.error('❌ Individual/Company mode error:', error);
+    return res.status(500).json(errorResponse('Mode verification failed'));
   }
 };

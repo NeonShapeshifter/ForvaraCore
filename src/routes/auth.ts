@@ -140,7 +140,7 @@ router.post('/create-company', authenticate, safeAsync(async (req: any, res: any
 
   // Sanitize company inputs
   const sanitizedRazonSocial = sanitizeCompanyName(razon_social);
-  const sanitizedRuc = ruc.trim().replace(/[^0-9\-]/g, ''); // Only numbers and hyphens for RUC
+  const sanitizedRuc = ruc.trim().replace(/[^0-9-]/g, ''); // Only numbers and hyphens for RUC
 
   if (!sanitizedRazonSocial || !sanitizedRuc) {
     return error(res, 'Invalid company name or RUC format', 400);
@@ -311,7 +311,20 @@ router.post('/forgot-password', safeAsync(async (req: any, res: any) => {
     }
     
     const authService = new AuthService();
-    await authService.requestPasswordReset({ email, phone });
+    
+    // Determine whether to use email or phone for password reset
+    const resetIdentifier = email || phone;
+    if (!resetIdentifier) {
+      return error(res, 'Email or phone is required', 400);
+    }
+    
+    const clientInfo = {
+      ip: req.ip,
+      userAgent: req.get('User-Agent'),
+      timestamp: new Date().toISOString()
+    };
+    
+    await authService.requestPasswordReset(resetIdentifier, clientInfo);
     
     return success(res, { 
       message: 'Si existe una cuenta con esa información, recibirás un enlace para restablecer tu contraseña.' 
@@ -338,7 +351,14 @@ router.post('/reset-password', safeAsync(async (req: any, res: any) => {
     }
     
     const authService = new AuthService();
-    await authService.resetPassword(token, new_password);
+    
+    const clientInfo = {
+      ip: req.ip,
+      userAgent: req.get('User-Agent'),
+      timestamp: new Date().toISOString()
+    };
+    
+    await authService.resetPassword(token, new_password, clientInfo);
     
     return success(res, { message: 'Password reset successfully' });
   } catch (err: any) {

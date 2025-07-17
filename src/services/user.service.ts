@@ -201,4 +201,27 @@ export class UserService {
       throw new Error(error.message || 'Failed to update notification preferences');
     }
   }
+
+  async getCompanyMembers(companyId: string) {
+    try {
+      const { data: members } = await safeSupabaseQuery(
+        supabase
+          .from('company_members')
+          .select(`
+            users (
+              id, first_name, last_name, email, phone, avatar_url
+            )
+          `)
+          .eq('company_id', companyId)
+          .eq('status', 'active')
+          .order('created_at', { ascending: false }),
+        { data: [], error: null }
+      );
+
+      return members?.map((member: any) => member.users) || [];
+    } catch (error: any) {
+      console.error('❌ Get company members error:', error);
+      throw new Error(error.message || 'Failed to get company members');
+    }
+  }
 }

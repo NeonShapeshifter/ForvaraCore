@@ -161,4 +161,128 @@ export class AppService {
       throw new Error(error.message || 'Failed to uninstall app');
     }
   }
+
+  // =====================================================
+  // PERSONAL APPS (Individual Mode)
+  // =====================================================
+
+  async getPersonalApps(userId: string) {
+    try {
+      const { data: subscriptions } = await safeSupabaseQuery(
+        supabase
+          .from('subscriptions')
+          .select(`
+            id, status, plan_name, features, created_at,
+            apps (
+              id, name, display_name, description, icon_url, category
+            )
+          `)
+          .eq('user_id', userId)
+          .eq('status', 'active')
+          .order('created_at'),
+        { data: [], error: null }
+      );
+
+      return subscriptions?.map((s: any) => ({
+        subscription_id: s.id,
+        status: s.status,
+        plan: s.plan_name,
+        features: s.features,
+        installed_at: s.created_at,
+        app: s.apps
+      })) || [];
+    } catch (error: any) {
+      console.error('❌ Get personal apps error:', error);
+      throw new Error('Failed to get personal apps');
+    }
+  }
+
+  async installPersonalApp(appId: string, userId: string, planName = 'basic') {
+    try {
+      // Verificar que la app existe
+      const app = await this.getApp(appId);
+      
+      // Verificar si ya está instalada
+      const { data: existing } = await safeSupabaseQuery(
+        supabase
+          .from('subscriptions')
+          .select('id')
+          .eq('user_id', userId)
+          .eq('app_id', appId)
+          .single(),
+        { data: null, error: null }
+      );
+
+      if (existing) {
+        throw new Error('App already installed');
+      }
+
+      // Crear subscription personal
+      const { data: subscription, error } = await supabase
+        .from('subscriptions')
+        .insert({
+          user_id: userId,
+          company_id: null, // Individual mode: no company
+          app_id: appId,
+          plan_name: planName,
+          status: 'active',
+          price_monthly: (app as any)?.base_price_monthly || 0,
+          features: {},
+          current_period_start: new Date().toISOString()
+        })
+        .select()
+        .single();
+
+      if (error) {
+        throw new Error(`Personal app installation failed: ${error.message}`);
+      }
+
+      return {
+        subscription,
+        app,
+        message: 'Personal app installed successfully'
+      };
+    } catch (error: any) {
+      console.error('❌ Install personal app error:', error);
+      throw new Error(error.message || 'Failed to install personal app');
+    }
+  }
+
+  async uninstallPersonalApp(appId: string, userId: string) {
+    try {
+      const { data: subscription } = await safeSupabaseQuery(
+        supabase
+          .from('subscriptions')
+          .select('id')
+          .eq('user_id', userId)
+          .eq('app_id', appId)
+          .single(),
+        { data: null, error: null }
+      );
+
+      if (!subscription) {
+        throw new Error('Personal app not installed');
+      }
+
+      // Marcar como cancelada
+      const { error } = await supabase
+        .from('subscriptions')
+        .update({
+          status: 'canceled',
+          canceled_at: new Date().toISOString()
+        })
+        .eq('id', (subscription as any)?.id);
+
+      if (error) {
+        throw new Error(`Personal app uninstall failed: ${error.message}`);
+      }
+
+      return {
+        message: 'Personal app uninstalled successfully'
+      };
+    } catch (error: any) {
+      console.error('❌ Uninstall personal app error:', error);
+      throw new Error(error.message || 'Failed to uninstall personal app');
+    }
+  }
 }

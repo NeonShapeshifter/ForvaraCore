@@ -13,6 +13,8 @@ import { analyticsRoutes } from './routes/analytics.js';
 import { adminRoutes } from './routes/admin.js';
 import { passwordResetRoutes } from './routes/password-reset.js';
 import { securityRoutes } from './routes/security.js';
+import { embeddedUsersRoutes } from './routes/embedded-users.js';
+import { appDelegatesRoutes } from './routes/app-delegates.js';
 import { generalRateLimit } from './utils/security.js';
 
 const app = express();
@@ -118,6 +120,8 @@ app.use('/api/analytics', analyticsRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/password-reset', passwordResetRoutes);
 app.use('/api/security', securityRoutes);
+app.use('/api/embedded-users', embeddedUsersRoutes);
+app.use('/api/app-delegates', appDelegatesRoutes);
 
 // Root health check
 app.get('/', (req, res) => {

@@ -283,7 +283,7 @@ export function validatePhoneNumber(phoneNumber: string | undefined | null): Pho
 
   try {
     // Basic format validation
-    if (!/^\+?[\d\s\-\(\)]+$/.test(trimmedPhone)) {
+    if (!/^\+?[\d\s-()]+$/.test(trimmedPhone)) {
       return {
         isValid: false,
         error: 'Formato de número inválido - solo números, espacios, guiones y paréntesis'

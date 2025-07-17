@@ -43,6 +43,7 @@ export interface User {
   
   // Runtime properties (not in database)
   company_id?: string; // Set by tenant middleware
+  is_individual_mode?: boolean; // True when user is in individual mode
 }
 
 export interface Company {
@@ -581,12 +582,12 @@ export interface CreateCustomerRequest {
   name?: string;
   phone?: string;
   address?: {
-    line1: string;
+    line1?: string;
     line2?: string;
-    city: string;
-    state: string;
-    postal_code: string;
-    country: string;
+    city?: string;
+    state?: string;
+    postal_code?: string;
+    country?: string;
   };
 }
 

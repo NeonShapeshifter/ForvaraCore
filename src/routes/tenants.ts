@@ -11,6 +11,7 @@ const tenantService = new TenantService();
 router.use(authenticate);
 
 // GET /api/tenants - Get user's companies
+// This endpoint does NOT require a tenant header since it lists all companies
 router.get('/', safeAsync(async (req: any, res: any) => {
   try {
     const companies = await tenantService.getUserCompanies(req.user.id);

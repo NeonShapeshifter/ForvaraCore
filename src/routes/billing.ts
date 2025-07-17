@@ -96,8 +96,15 @@ router.post('/subscriptions', authenticate, requireTenant, async (req: AuthReque
     const body = CreateSubscriptionSchema.parse(req.body)
 
     const subscription = await billingService.createSubscription({
-      ...body,
       company_id,
+      app_id: body.app_id,
+      plan_name: body.plan_name,
+      price_id: body.price_id,
+      billing_cycle: body.billing_cycle,
+      price_monthly: body.price_monthly,
+      customer_email: body.customer_email,
+      customer_name: body.customer_name,
+      trial_days: body.trial_days,
     })
 
     res.json(successResponse(subscription))

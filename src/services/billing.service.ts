@@ -184,8 +184,8 @@ export class BillingService {
           status: stripeSubscription.status === 'trialing' ? 'trialing' : 'active',
           stripe_subscription_id: stripeSubscription.id,
           stripe_customer_id: customer.id,
-          current_period_start: new Date(stripeSubscription.current_period_start * 1000).toISOString(),
-          current_period_end: new Date(stripeSubscription.current_period_end * 1000).toISOString(),
+          current_period_start: new Date((stripeSubscription as any).current_period_start * 1000).toISOString(),
+          current_period_end: new Date((stripeSubscription as any).current_period_end * 1000).toISOString(),
           trial_ends_at: stripeSubscription.trial_end ? 
             new Date(stripeSubscription.trial_end * 1000).toISOString() : null,
         })
@@ -314,8 +314,8 @@ export class BillingService {
       .from('subscriptions')
       .update({
         status: subscription.status,
-        current_period_start: new Date(subscription.current_period_start * 1000).toISOString(),
-        current_period_end: new Date(subscription.current_period_end * 1000).toISOString(),
+        current_period_start: new Date((subscription as any).current_period_start * 1000).toISOString(),
+        current_period_end: new Date((subscription as any).current_period_end * 1000).toISOString(),
         trial_ends_at: subscription.trial_end ? 
           new Date(subscription.trial_end * 1000).toISOString() : null,
         cancel_at_period_end: subscription.cancel_at_period_end,

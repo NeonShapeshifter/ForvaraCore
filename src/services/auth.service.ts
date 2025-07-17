@@ -1,4 +1,4 @@
-import jwt from 'jsonwebtoken';
+import * as jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
 import { supabase } from '@/config/database';
@@ -864,11 +864,13 @@ export class AuthService {
   // =====================================================
 
   private generateJWT(payload: Partial<JWTPayload>): string {
-    return jwt.sign(
-      payload,
-      process.env.JWT_SECRET!,
-      { expiresIn: process.env.JWT_EXPIRES_IN || '7d' }
-    );
+    const secret = process.env.JWT_SECRET;
+    if (!secret) {
+      throw new Error('JWT_SECRET is required');
+    }
+    
+    const expiresIn = process.env.JWT_EXPIRES_IN || '7d';
+    return (jwt.sign as any)(payload, secret, { expiresIn });
   }
 
   private formatUserResponse(user: any): User {
