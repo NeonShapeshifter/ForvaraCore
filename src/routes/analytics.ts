@@ -2,22 +2,69 @@ import { Router } from 'express'
 import { success, error } from '../utils/responses.js'
 import { safeAsync } from '../utils/safeAsync.js'
 import { authenticate } from '../middleware/auth.js'
-import { requireTenant } from '../middleware/tenant.js'
+import { individualOrCompanyMode } from '../middleware/tenant.js'
 import { AuthRequest } from '../types/index.js'
 import { supabase } from '../config/database.js'
 
 const router = Router()
 
-// All analytics endpoints require auth and tenant
+// All analytics endpoints require auth
 router.use(authenticate)
-router.use(requireTenant)
+router.use(individualOrCompanyMode)
 
 // GET /api/analytics - Get company analytics
 router.get('/', safeAsync(async (req: AuthRequest, res) => {
   try {
     const { range = '7d' } = req.query
-    const companyId = req.user?.company_id
 
+    if (req.user?.is_individual_mode) {
+      // Individual mode analytics
+      const analytics = {
+        overview: {
+          total_users: 1,
+          active_users_7d: 1,
+          total_apps: 0,
+          active_subscriptions: 0,
+          monthly_revenue: 0,
+          storage_used_gb: 0.5
+        },
+        trends: {
+          users_growth: 0,
+          revenue_growth: 0,
+          apps_growth: 0
+        },
+        activity: Array.from({ length: 7 }, (_, i) => {
+          const date = new Date()
+          date.setDate(date.getDate() - (6 - i))
+          return {
+            date: date.toISOString().split('T')[0],
+            users: 1,
+            revenue: 0,
+            apps_used: 0
+          }
+        }),
+        top_apps: []
+      }
+
+      // Get personal subscriptions
+      const { data: personalSubs } = await supabase
+        .from('subscriptions')
+        .select('id, price_monthly')
+        .eq('user_id', req.user.id)
+        .eq('status', 'active')
+
+      if (personalSubs) {
+        analytics.overview.total_apps = personalSubs.length
+        analytics.overview.active_subscriptions = personalSubs.length
+        analytics.overview.monthly_revenue = personalSubs.reduce((sum, sub) => {
+          return sum + (sub.price_monthly || 0)
+        }, 0) * 100
+      }
+
+      return success(res, analytics)
+    }
+
+    const companyId = req.user?.company_id
     if (!companyId) {
       return error(res, 'Company ID required', 400)
     }

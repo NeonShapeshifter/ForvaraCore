@@ -15,6 +15,7 @@ import { passwordResetRoutes } from './routes/password-reset.js';
 import { securityRoutes } from './routes/security.js';
 import { embeddedUsersRoutes } from './routes/embedded-users.js';
 import { appDelegatesRoutes } from './routes/app-delegates.js';
+import { dashboardRoutes } from './routes/dashboard.js';
 import { generalRateLimit } from './utils/security.js';
 
 const app = express();
@@ -90,7 +91,7 @@ app.use(cors({
     }
   },
   credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-Tenant-ID'],
   optionsSuccessStatus: 200 // Some legacy browsers choke on 204
 }));
@@ -122,6 +123,7 @@ app.use('/api/password-reset', passwordResetRoutes);
 app.use('/api/security', securityRoutes);
 app.use('/api/embedded-users', embeddedUsersRoutes);
 app.use('/api/app-delegates', appDelegatesRoutes);
+app.use('/api/dashboard', dashboardRoutes);
 
 // Root health check
 app.get('/', (req, res) => {

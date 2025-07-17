@@ -50,8 +50,11 @@ export const STRIPE_CONFIG = {
   // Payment methods available in LATAM
   PAYMENT_METHODS: ['card', 'oxxo', 'alipay'], // More can be added per country
   
-  // Default trial period
+  // Default trial period for subscriptions
   TRIAL_PERIOD_DAYS: 14,
+  
+  // Company trial period configuration
+  COMPANY_TRIAL_DAYS: parseInt(process.env.COMPANY_TRIAL_DAYS || '30'),
   
   // Webhook events we handle
   WEBHOOK_EVENTS: [

@@ -5,6 +5,7 @@ import { supabase } from '@/config/database';
 import { safeSupabaseQuery } from '@/utils/safeAsync';
 import { EmailService } from './email.service.js';
 import { validatePhoneNumber, normalizePhoneNumber } from '../utils/phoneValidation.js';
+import { STRIPE_CONFIG } from '@/config/stripe';
 import { 
   User, 
   Company, 
@@ -326,7 +327,7 @@ export class AuthService {
           owner_id: userId,
           created_by: userId,
           status: 'trial', // Empresas empiezan en trial
-          trial_ends_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(), // 30 días
+          trial_ends_at: new Date(Date.now() + STRIPE_CONFIG.COMPANY_TRIAL_DAYS * 24 * 60 * 60 * 1000).toISOString(), // Configurable trial period
           settings: {},
           onboarding_completed: false
         })
