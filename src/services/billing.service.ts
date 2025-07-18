@@ -19,10 +19,64 @@ export class BillingService {
   }
   
   /**
-   * Create or retrieve Stripe customer for a company
+   * Create or retrieve Stripe customer for a company or individual user
    */
-  async createOrGetCustomer(companyId: string, customerData: CreateCustomerRequest): Promise<Stripe.Customer> {
+  async createOrGetCustomer(companyId: string | null, customerData: CreateCustomerRequest, userId?: string): Promise<Stripe.Customer> {
     try {
+      // INDIVIDUAL MODE: Handle individual users
+      if (!companyId && userId) {
+        // Check if individual user already has a stripe customer
+        const { data: user, error: userError } = await supabase
+          .from('users')
+          .select('stripe_customer_id, first_name, last_name, email')
+          .eq('id', userId)
+          .single()
+
+        if (userError) {
+          throw new Error(`User not found: ${userError.message}`)
+        }
+
+        // If Stripe customer already exists, return it
+        if (user.stripe_customer_id) {
+          const customer = await this.stripeClient.customers.retrieve(user.stripe_customer_id)
+          if (customer && !customer.deleted) {
+            return customer as Stripe.Customer
+          }
+        }
+
+        // Create new Stripe customer for individual user
+        const customer = await this.stripeClient.customers.create({
+          email: customerData.email || user.email,
+          name: customerData.name || `${user.first_name} ${user.last_name}`,
+          phone: customerData.phone,
+          address: customerData.address ? {
+            line1: customerData.address.line1,
+            line2: customerData.address.line2,
+            city: customerData.address.city,
+            state: customerData.address.state,
+            postal_code: customerData.address.postal_code,
+            country: customerData.address.country,
+          } : undefined,
+          metadata: {
+            user_id: userId,
+            mode: 'individual'
+          }
+        })
+
+        // Save customer ID to user record
+        await supabase
+          .from('users')
+          .update({ stripe_customer_id: customer.id })
+          .eq('id', userId)
+
+        return customer
+      }
+
+      // COMPANY MODE: Handle companies
+      if (!companyId) {
+        throw new Error('Either companyId or userId is required')
+      }
+
       // Check if customer already exists in our database
       const { data: company, error: companyError } = await supabase
         .from('companies')
@@ -81,17 +135,18 @@ export class BillingService {
    * Create a checkout session for app subscription
    */
   async createCheckoutSession(
-    companyId: string, 
+    companyId: string | null, 
     appId: string, 
     planName: string,
     priceId: string,
     customerData: CreateCustomerRequest,
     successUrl: string,
-    cancelUrl: string
+    cancelUrl: string,
+    userId?: string
   ): Promise<Stripe.Checkout.Session> {
     try {
-      // Create or get customer
-      const customer = await this.createOrGetCustomer(companyId, customerData)
+      // Create or get customer (supports both company and individual mode)
+      const customer = await this.createOrGetCustomer(companyId, customerData, userId)
 
       // Get app information
       const { data: app, error: appError } = await supabase
@@ -120,15 +175,19 @@ export class BillingService {
         subscription_data: {
           trial_period_days: STRIPE_CONFIG.TRIAL_PERIOD_DAYS,
           metadata: {
-            company_id: companyId,
+            company_id: companyId || '',
+            user_id: userId || '',
             app_id: appId,
             plan_name: planName,
+            mode: companyId ? 'company' : 'individual',
           },
         },
         metadata: {
-          company_id: companyId,
+          company_id: companyId || '',
+          user_id: userId || '',
           app_id: appId,
           plan_name: planName,
+          mode: companyId ? 'company' : 'individual',
         },
         allow_promotion_codes: true,
         billing_address_collection: 'required',
@@ -149,11 +208,11 @@ export class BillingService {
    */
   async createSubscription(request: CreateSubscriptionRequest): Promise<Subscription> {
     try {
-      // Create or get customer
+      // Create or get customer (supports both company and individual mode)
       const customer = await this.createOrGetCustomer(request.company_id, {
         email: request.customer_email,
         name: request.customer_name,
-      })
+      }, request.user_id)
 
       // Create Stripe subscription
       const stripeSubscription = await this.stripeClient.subscriptions.create({
@@ -166,9 +225,11 @@ export class BillingService {
         ],
         trial_period_days: request.trial_days || STRIPE_CONFIG.TRIAL_PERIOD_DAYS,
         metadata: {
-          company_id: request.company_id,
+          company_id: request.company_id || '',
+          user_id: request.user_id || '',
           app_id: request.app_id,
           plan_name: request.plan_name,
+          mode: request.company_id ? 'company' : 'individual',
         },
       })
 
@@ -177,6 +238,7 @@ export class BillingService {
         .from('subscriptions')
         .insert({
           company_id: request.company_id,
+          user_id: request.user_id,
           app_id: request.app_id,
           plan_name: request.plan_name,
           billing_cycle: request.billing_cycle,
@@ -247,22 +309,44 @@ export class BillingService {
   /**
    * Get customer portal URL
    */
-  async createCustomerPortalSession(companyId: string, returnUrl: string): Promise<string> {
+  async createCustomerPortalSession(companyId: string | null, returnUrl: string, userId?: string): Promise<string> {
     try {
-      // Get company's Stripe customer ID
-      const { data: company, error: companyError } = await supabase
-        .from('companies')
-        .select('stripe_customer_id')
-        .eq('id', companyId)
-        .single()
+      let stripeCustomerId: string | null = null
 
-      if (companyError || !company?.stripe_customer_id) {
-        throw new Error('Company or Stripe customer not found')
+      // INDIVIDUAL MODE: Get individual user's Stripe customer ID
+      if (!companyId && userId) {
+        const { data: user, error: userError } = await supabase
+          .from('users')
+          .select('stripe_customer_id')
+          .eq('id', userId)
+          .single()
+
+        if (userError || !user?.stripe_customer_id) {
+          throw new Error('User or Stripe customer not found')
+        }
+
+        stripeCustomerId = user.stripe_customer_id
+      }
+      // COMPANY MODE: Get company's Stripe customer ID
+      else if (companyId) {
+        const { data: company, error: companyError } = await supabase
+          .from('companies')
+          .select('stripe_customer_id')
+          .eq('id', companyId)
+          .single()
+
+        if (companyError || !company?.stripe_customer_id) {
+          throw new Error('Company or Stripe customer not found')
+        }
+
+        stripeCustomerId = company.stripe_customer_id
+      } else {
+        throw new Error('Either companyId or userId is required')
       }
 
       // Create portal session
       const session = await this.stripeClient.billingPortal.sessions.create({
-        customer: company.stripe_customer_id,
+        customer: stripeCustomerId,
         return_url: returnUrl,
       })
 
@@ -359,8 +443,55 @@ export class BillingService {
   /**
    * Get subscription usage and billing information
    */
-  async getBillingInfo(companyId: string): Promise<BillingInfo> {
+  async getBillingInfo(companyId: string | null, userId?: string): Promise<BillingInfo> {
     try {
+      // INDIVIDUAL MODE: Handle individual users
+      if (!companyId && userId) {
+        const { data: user, error: userError } = await supabase
+          .from('users')
+          .select(`
+            *,
+            subscriptions:subscriptions!user_id(*)
+          `)
+          .eq('id', userId)
+          .single()
+
+        if (userError) {
+          throw new Error(`User not found: ${userError.message}`)
+        }
+
+        // Calculate total monthly cost for individual user
+        const totalMonthlyCost = user.subscriptions?.reduce((total: number, sub: any) => {
+          return total + (sub.status === 'active' || sub.status === 'trialing' ? sub.price_monthly : 0)
+        }, 0) || 0
+
+        // Get Stripe customer if exists
+        let paymentMethods: Stripe.PaymentMethod[] = []
+        if (user.stripe_customer_id) {
+          const methods = await this.stripeClient.paymentMethods.list({
+            customer: user.stripe_customer_id,
+            type: 'card',
+          })
+          paymentMethods = methods.data
+        }
+
+        return {
+          id: user.id,
+          name: `${user.first_name} ${user.last_name}`,
+          email: user.email,
+          stripe_customer_id: user.stripe_customer_id,
+          subscriptions: user.subscriptions || [],
+          total_monthly_cost: totalMonthlyCost,
+          payment_methods: paymentMethods,
+          mode: 'individual'
+        }
+      }
+
+      // COMPANY MODE: Handle companies
+      if (!companyId) {
+        throw new Error('Either companyId or userId is required')
+      }
+
       const { data: company, error: companyError } = await supabase
         .from('companies')
         .select(`

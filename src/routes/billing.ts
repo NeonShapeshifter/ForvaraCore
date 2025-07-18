@@ -1,7 +1,7 @@
 import express from 'express'
 import { BillingService } from '../services/billing.service.js'
 import { authenticate } from '../middleware/auth.js'
-import { requireTenant } from '../middleware/tenant.js'
+import { individualOrCompanyMode } from '../middleware/tenant.js'
 import stripe, { STRIPE_CONFIG } from '../config/stripe.js'
 import { successResponse, errorResponse } from '../utils/responses.js'
 import { AuthRequest } from '../types/index.js'
@@ -10,9 +10,9 @@ import { z } from 'zod'
 const router = express.Router()
 const billingService = new BillingService()
 
-// Apply authentication and tenant middleware to all routes
+// Apply authentication and individual/company mode middleware to all routes
 router.use(authenticate)
-router.use(requireTenant)
+router.use(individualOrCompanyMode)
 
 // Validation schemas
 const CreateCheckoutSchema = z.object({
@@ -51,11 +51,14 @@ const CreateSubscriptionSchema = z.object({
  * POST /api/billing/checkout
  * Create Stripe checkout session for app subscription
  */
-router.post('/checkout', authenticate, requireTenant, async (req: AuthRequest, res) => {
+router.post('/checkout', async (req: AuthRequest, res) => {
   try {
     const company_id = req.user?.company_id
-    if (!company_id) {
-      return res.status(400).json(errorResponse('Company ID required'))
+    const user_id = req.user?.id
+    const is_individual = req.user?.is_individual_mode
+    
+    if (!company_id && !is_individual) {
+      return res.status(400).json(errorResponse('Company ID required for company mode'))
     }
     
     const body = CreateCheckoutSchema.parse(req.body)
@@ -67,7 +70,8 @@ router.post('/checkout', authenticate, requireTenant, async (req: AuthRequest, r
       body.price_id,
       body.customer_data,
       body.success_url,
-      body.cancel_url
+      body.cancel_url,
+      is_individual ? user_id : undefined
     )
 
     res.json(successResponse({
@@ -86,17 +90,21 @@ router.post('/checkout', authenticate, requireTenant, async (req: AuthRequest, r
  * POST /api/billing/subscriptions
  * Create subscription directly (admin use)
  */
-router.post('/subscriptions', authenticate, requireTenant, async (req: AuthRequest, res) => {
+router.post('/subscriptions', async (req: AuthRequest, res) => {
   try {
     const company_id = req.user?.company_id
-    if (!company_id) {
-      return res.status(400).json(errorResponse('Company ID required'))
+    const user_id = req.user?.id
+    const is_individual = req.user?.is_individual_mode
+    
+    if (!company_id && !is_individual) {
+      return res.status(400).json(errorResponse('Company ID required for company mode'))
     }
     
     const body = CreateSubscriptionSchema.parse(req.body)
 
     const subscription = await billingService.createSubscription({
-      company_id,
+      company_id: is_individual ? null : company_id,
+      user_id: is_individual ? user_id : undefined,
       app_id: body.app_id,
       plan_name: body.plan_name,
       price_id: body.price_id,
@@ -120,7 +128,7 @@ router.post('/subscriptions', authenticate, requireTenant, async (req: AuthReque
  * DELETE /api/billing/subscriptions/:id
  * Cancel subscription
  */
-router.delete('/subscriptions/:id', authenticate, requireTenant, async (req: AuthRequest, res) => {
+router.delete('/subscriptions/:id', async (req: AuthRequest, res) => {
   try {
     const { id } = req.params
     const { immediately = false } = req.query
@@ -138,16 +146,19 @@ router.delete('/subscriptions/:id', authenticate, requireTenant, async (req: Aut
 
 /**
  * GET /api/billing/info
- * Get billing information for company
+ * Get billing information for company or individual user
  */
-router.get('/info', authenticate, requireTenant, async (req: AuthRequest, res) => {
+router.get('/info', async (req: AuthRequest, res) => {
   try {
     const company_id = req.user?.company_id
-    if (!company_id) {
-      return res.status(400).json(errorResponse('Company ID required'))
+    const user_id = req.user?.id
+    const is_individual = req.user?.is_individual_mode
+    
+    if (!company_id && !is_individual) {
+      return res.status(400).json(errorResponse('Company ID required for company mode'))
     }
     
-    const billingInfo = await billingService.getBillingInfo(company_id)
+    const billingInfo = await billingService.getBillingInfo(is_individual ? null : company_id, is_individual ? user_id : undefined)
 
     res.json(successResponse(billingInfo))
   } catch (error) {
@@ -162,11 +173,14 @@ router.get('/info', authenticate, requireTenant, async (req: AuthRequest, res) =
  * POST /api/billing/portal
  * Create customer portal session
  */
-router.post('/portal', authenticate, requireTenant, async (req: AuthRequest, res) => {
+router.post('/portal', async (req: AuthRequest, res) => {
   try {
     const company_id = req.user?.company_id
-    if (!company_id) {
-      return res.status(400).json(errorResponse('Company ID required'))
+    const user_id = req.user?.id
+    const is_individual = req.user?.is_individual_mode
+    
+    if (!company_id && !is_individual) {
+      return res.status(400).json(errorResponse('Company ID required for company mode'))
     }
     
     const { return_url } = req.body
@@ -175,7 +189,7 @@ router.post('/portal', authenticate, requireTenant, async (req: AuthRequest, res
       return res.status(400).json(errorResponse('return_url is required'))
     }
 
-    const portalUrl = await billingService.createCustomerPortalSession(company_id, return_url)
+    const portalUrl = await billingService.createCustomerPortalSession(is_individual ? null : company_id, return_url, is_individual ? user_id : undefined)
 
     res.json(successResponse({ portal_url: portalUrl }))
   } catch (error) {

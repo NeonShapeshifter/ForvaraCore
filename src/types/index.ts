@@ -592,7 +592,8 @@ export interface CreateCustomerRequest {
 }
 
 export interface CreateSubscriptionRequest {
-  company_id: string;
+  company_id: string | null;
+  user_id?: string;
   app_id: string;
   plan_name: string;
   price_id: string;
