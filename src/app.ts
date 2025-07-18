@@ -16,6 +16,8 @@ import { securityRoutes } from './routes/security.js';
 import { embeddedUsersRoutes } from './routes/embedded-users.js';
 import { appDelegatesRoutes } from './routes/app-delegates.js';
 import { dashboardRoutes } from './routes/dashboard.js';
+import { marketplaceRoutes } from './routes/marketplace.js';
+import { companiesRoutes } from './routes/companies.js';
 import { generalRateLimit } from './utils/security.js';
 
 const app = express();
@@ -124,6 +126,8 @@ app.use('/api/security', securityRoutes);
 app.use('/api/embedded-users', embeddedUsersRoutes);
 app.use('/api/app-delegates', appDelegatesRoutes);
 app.use('/api/dashboard', dashboardRoutes);
+app.use('/api/marketplace', marketplaceRoutes);
+app.use('/api/companies', companiesRoutes);
 
 // Root health check
 app.get('/', (req, res) => {

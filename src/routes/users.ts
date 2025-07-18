@@ -94,4 +94,66 @@ router.get('/company-members', authenticate, requireTenant, safeAsync(async (req
   }
 }));
 
+// GET /api/users/settings - Get user settings
+router.get('/settings', authenticate, safeAsync(async (req: any, res: any) => {
+  try {
+    const settings = {
+      // Profile
+      first_name: req.user.first_name,
+      last_name: req.user.last_name,
+      email: req.user.email,
+      phone: req.user.phone,
+      avatar_url: req.user.avatar_url,
+      bio: req.user.bio,
+      
+      // Preferences
+      language: req.user.preferred_language || 'es',
+      timezone: req.user.timezone || 'America/Panama',
+      
+      // Notifications (would come from user preferences table)
+      email_notifications: req.user.email_notifications ?? true,
+      push_notifications: req.user.push_notifications ?? true,
+      sms_notifications: req.user.sms_notifications ?? false,
+      marketing_emails: req.user.marketing_emails ?? true,
+      
+      // Security
+      two_factor_enabled: req.user.two_factor_enabled || false,
+      
+      // Appearance
+      theme: req.user.theme || 'system'
+    };
+    
+    return success(res, settings);
+  } catch (err: any) {
+    return error(res, err.message, 400);
+  }
+}));
+
+// PUT /api/users/settings - Update user settings
+router.put('/settings', authenticate, safeAsync(async (req: any, res: any) => {
+  try {
+    const updatedUser = await userService.updateProfile(req.user.id, req.body);
+    return success(res, updatedUser);
+  } catch (err: any) {
+    return error(res, err.message, 400);
+  }
+}));
+
+// GET /api/users/stats - Get user statistics for profile
+router.get('/stats', authenticate, safeAsync(async (req: any, res: any) => {
+  try {
+    // Mock stats for now - in real implementation would query actual data
+    const stats = {
+      companies: 1, // Count from company_members table
+      apps_installed: 2, // Count from app_installations
+      team_members: 3, // Count from company_members where user is admin
+      storage_used: 1.2 // GB used across all companies
+    };
+    
+    return success(res, stats);
+  } catch (err: any) {
+    return error(res, err.message, 400);
+  }
+}));
+
 export { router as userRoutes };
